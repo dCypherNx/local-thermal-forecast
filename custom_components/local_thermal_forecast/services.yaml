@@ -1,0 +1,13 @@
+get_room_forecast:
+  name: Get room forecast
+  description: Return the complete 12-hour hybrid forecast for a configured room.
+  fields:
+    room_entity_id:
+      name: Room temperature entity
+      description: Configured temperature sensor that identifies the room.
+      required: true
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+

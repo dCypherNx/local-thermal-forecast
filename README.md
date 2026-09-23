@@ -1,0 +1,80 @@
+# Local Thermal Forecast
+
+Custom integration for Home Assistant that combines numerical weather forecasts with the
+temperature history measured at the installation itself.
+
+The outdoor 24-hour forecast is anchored to one or more local sensors and learned separately
+for each forecast horizon. ECMWF IFS HRES, Open-Meteo Best Match, DWD ICON Global and NCEP GFS
+Global are collected in parallel and scored against the local observations. Each configured
+room gets an independent 12-hour hybrid thermal model using its own history, the hybrid outdoor
+forecast and solar radiation.
+
+## Current scope
+
+- UI-only Config Flow, Reconfigure Flow and Options Flow.
+- Multi-model Open-Meteo collection with no credentials for non-commercial use.
+- Explainable online recursive regression; no opaque machine-learning dependency.
+- `WeatherEntity` with the complete 24-hour outdoor series through Home Assistant's forecast API.
+- Compact room summary sensors and the `local_thermal_forecast.get_room_forecast` response action.
+- Forecast ledger, observations used for verification, learned parameters and metrics restored
+  after restart.
+- Diagnostic sensors for model age, selected source, bias and MAE.
+- Graceful fallback to raw weather data when local observations are unavailable.
+
+This is an experimental forecast. It must not be used as a safety system or as the sole source
+for severe-weather decisions.
+
+## Provider assignment in this release
+
+| Purpose | Provider / model |
+| --- | --- |
+| Weather API gateway | Open-Meteo |
+| Outdoor house temperature | Adaptive choice among ECMWF IFS HRES, Open-Meteo Best Match, DWD ICON Global and NCEP GFS Global, then locally calibrated |
+| Room temperature | Independent local thermal model per room, driven by its sensor history and the calibrated outdoor forecast |
+
+Provider identity is kept in every forecast snapshot, while the normalized forecast and hybrid
+model layers do not depend on Home Assistant entities. Regional house-to-office weather,
+additional locations, alerts, nowcasting and 15/30-day products are deliberately outside this
+first release.
+
+## Installation
+
+### HACS custom repository
+
+1. Add this GitHub repository to HACS as an **Integration**.
+2. Install **Local Thermal Forecast**.
+3. Restart Home Assistant.
+4. Open **Settings → Devices & services → Add integration** and search for the integration.
+
+### Manual
+
+Copy `custom_components/local_thermal_forecast` to the same path below the Home Assistant
+configuration directory and restart Home Assistant.
+
+## Configuration
+
+The setup flow asks for:
+
+- the home coordinate, initially populated from Home Assistant;
+- one or more outdoor temperature sensors;
+- optional room temperature sensors.
+
+The integration stores forecast snapshots, the later observations and errors associated with
+those forecasts, and learned model parameters. General sensor history remains owned by Recorder.
+Retention and update cadence are available under integration options.
+
+## Data provenance
+
+Open-Meteo is the API gateway. Every issued forecast retains the scientific model identifier.
+The integration does not silently replace the selected home model when the API is unavailable;
+it keeps the last valid forecast and reports its age.
+
+## Development
+
+Pure model and normalization tests can be run without a Home Assistant installation:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Home Assistant validation should additionally run Hassfest and the HACS Action before release.

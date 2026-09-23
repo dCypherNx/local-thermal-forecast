@@ -1,0 +1,60 @@
+{
+  "title": "Local Thermal Forecast",
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Only one home can be configured. Additional locations will be supported separately."
+    },
+    "error": {
+      "external_sensor_required": "Select at least one outdoor temperature sensor."
+    },
+    "step": {
+      "user": {
+        "title": "Configure local thermal forecast",
+        "description": "Select the outdoor sensors used to anchor the hybrid forecast and, optionally, room sensors.",
+        "data": {
+          "name": "Name",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "external_sensors": "Outdoor temperature sensors",
+          "room_sensors": "Room temperature sensors"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure local thermal forecast",
+        "data": {
+          "name": "Name",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "external_sensors": "Outdoor temperature sensors",
+          "room_sensors": "Room temperature sensors"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Forecast operation",
+        "data": {
+          "retention_days": "Forecast history retention (days)",
+          "update_interval_minutes": "Update interval (minutes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "forecast_age": {"name": "Forecast age"},
+      "forecast_bias": {"name": "Hybrid bias +{horizon}h"},
+      "forecast_mae": {"name": "Hybrid MAE +{horizon}h"},
+      "model_quality": {"name": "Model quality"},
+      "selected_model": {"name": "Selected weather model"}
+    }
+  },
+  "services": {
+    "get_room_forecast": {
+      "name": "Get room forecast",
+      "description": "Return the complete 12-hour forecast for one configured room."
+    }
+  }
+}

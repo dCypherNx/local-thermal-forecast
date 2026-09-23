@@ -1,0 +1,60 @@
+{
+  "title": "Previsão térmica local",
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Somente uma residência pode ser configurada. Localizações adicionais serão suportadas separadamente."
+    },
+    "error": {
+      "external_sensor_required": "Selecione pelo menos um sensor de temperatura externa."
+    },
+    "step": {
+      "user": {
+        "title": "Configurar previsão térmica local",
+        "description": "Selecione os sensores externos usados para ancorar a previsão híbrida e, opcionalmente, os sensores dos quartos.",
+        "data": {
+          "name": "Nome",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "external_sensors": "Sensores de temperatura externa",
+          "room_sensors": "Sensores de temperatura dos quartos"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar previsão térmica local",
+        "data": {
+          "name": "Nome",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "external_sensors": "Sensores de temperatura externa",
+          "room_sensors": "Sensores de temperatura dos quartos"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Operação da previsão",
+        "data": {
+          "retention_days": "Retenção do histórico de forecasts (dias)",
+          "update_interval_minutes": "Intervalo de atualização (minutos)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "forecast_age": {"name": "Idade do forecast"},
+      "forecast_bias": {"name": "Bias híbrido +{horizon}h"},
+      "forecast_mae": {"name": "MAE híbrido +{horizon}h"},
+      "model_quality": {"name": "Qualidade do modelo"},
+      "selected_model": {"name": "Modelo meteorológico selecionado"}
+    }
+  },
+  "services": {
+    "get_room_forecast": {
+      "name": "Obter previsão do quarto",
+      "description": "Retorna a previsão completa de 12 horas de um quarto configurado."
+    }
+  }
+}
