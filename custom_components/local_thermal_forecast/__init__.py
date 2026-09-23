@@ -25,6 +25,7 @@ from .storage import ThermalStore
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.WEATHER, Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass(slots=True)
