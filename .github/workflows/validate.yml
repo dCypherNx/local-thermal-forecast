@@ -45,6 +45,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view v0.3.3-rc.2 >/dev/null 2>&1; then
-            gh release create v0.3.3-rc.2 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.3-rc.2" --prerelease --notes "Release candidate for thermal-only forecast presentation, rolling-horizon extrema attributes, live local observations, and the untouched ECMWF IFS HRES control forecast."
+          if ! gh release view v0.3.3-rc.3 >/dev/null 2>&1; then
+            gh release create v0.3.3-rc.3 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.3-rc.3" --prerelease --notes "Release candidate for strictly thermal calibrated entities, rolling-horizon extrema, and resilient ECMWF IFS HRES control handling."
           fi
