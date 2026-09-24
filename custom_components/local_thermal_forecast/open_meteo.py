@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession
 
-from .const import MODEL_IDS, OUTDOOR_HOURS
+from .const import MODEL_IDS, OUTDOOR_HOURS, PRIMARY_MODEL
 from .models import ForecastBundle, ModelForecast, WeatherPoint
 from .provider import ForecastProviderError
 
@@ -60,7 +60,12 @@ def normalize_response(
 
     times = [_parse_time(value) for value in hourly["time"]]
     forecasts: dict[str, ModelForecast] = {}
-    for model in MODEL_IDS:
+    models = (
+        MODEL_IDS
+        if any(f"temperature_2m_{model}" in hourly for model in MODEL_IDS)
+        else (PRIMARY_MODEL,)
+    )
+    for model in models:
         points: list[WeatherPoint] = []
         for index, valid_at in enumerate(times):
             temperature = _value(hourly, "temperature_2m", model, index)
@@ -87,8 +92,8 @@ def normalize_response(
                     ),
                 )
             )
-        if len(points) >= OUTDOOR_HOURS + 2:
-            forecasts[model] = ModelForecast(model, tuple(points[: OUTDOOR_HOURS + 2]))
+        if len(points) >= OUTDOOR_HOURS + 1:
+            forecasts[model] = ModelForecast(model, tuple(points))
 
     if not forecasts:
         raise OpenMeteoError("No configured model returned a complete 24-hour forecast")
@@ -128,8 +133,11 @@ def _interpolate_optional(
 def resample_forecast(
     forecast: ModelForecast, retrieved_at: datetime, hours: int = OUTDOOR_HOURS
 ) -> ModelForecast:
-    """Interpolate hourly provider data to exact lead times from retrieval."""
-    start = retrieved_at.astimezone(UTC)
+    """Interpolate provider data to full civil-hour forecast targets."""
+    retrieved = retrieved_at.astimezone(UTC)
+    start = retrieved.replace(minute=0, second=0, microsecond=0)
+    if retrieved > start:
+        start += timedelta(hours=1)
     source = forecast.points
     points: list[WeatherPoint] = []
     for horizon in range(hours + 1):
@@ -216,9 +224,10 @@ class OpenMeteoClient:
         except (TimeoutError, ClientError) as err:
             raise OpenMeteoError(f"Open-Meteo request failed: {err}") from err
 
-        return normalize_response(
+        bundle = normalize_response(
             payload,
             requested_latitude=latitude,
             requested_longitude=longitude,
             retrieved_at=retrieved_at,
         )
+        return bundle

@@ -5,7 +5,12 @@ from __future__ import annotations
 from hashlib import sha1
 from typing import Any
 
-from homeassistant.components.weather import Forecast, WeatherEntity, WeatherEntityFeature
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.components.weather import (
+    Forecast,
+    WeatherEntity,
+    WeatherEntityFeature,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfPrecipitationDepth,
@@ -13,15 +18,38 @@ from homeassistant.const import (
     UnitOfSpeed,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntegrationRuntime
 from .const import DOMAIN, MODEL_NAMES, OUTDOOR_HOURS, ROOM_HOURS
 from .coordinator import LocalThermalForecastCoordinator
+from .observation import current_temperature
+
+
+def _humidity_sensor_for_source(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    source_entity_id: str,
+) -> str | None:
+    """Return the unambiguous humidity sensor belonging to the source device."""
+    source = registry.async_get(source_entity_id)
+    if source is None or source.device_id is None:
+        return None
+
+    candidates: list[str] = []
+    for entry in er.async_entries_for_device(registry, source.device_id):
+        if entry.entity_id == source_entity_id:
+            continue
+        state = hass.states.get(entry.entity_id)
+        if state is not None and state.attributes.get("device_class") == SensorDeviceClass.HUMIDITY:
+            candidates.append(entry.entity_id)
+    return candidates[0] if len(candidates) == 1 else None
+
 
 WMO_CONDITIONS = {
     0: "sunny",
@@ -63,7 +91,7 @@ async def async_setup_entry(
     """Create one weather forecast for every configured temperature sensor."""
     runtime: IntegrationRuntime = entry.runtime_data
     registry = er.async_get(hass)
-    entities: list[WeatherEntity] = []
+    entities: list[WeatherEntity] = [RawControlForecast(runtime.coordinator, entry)]
     for role, source_ids in (
         ("external", runtime.coordinator.external_sensors),
         ("internal", runtime.coordinator.room_sensors),
@@ -83,9 +111,127 @@ async def async_setup_entry(
                     stable_source_id,
                     source_name,
                     role,
+                    _humidity_sensor_for_source(hass, registry, source_entity_id),
                 )
             )
     async_add_entities(entities)
+
+
+class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], WeatherEntity):
+    """Untouched numerical-model forecast used as the experimental control."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Previsão Base"
+    _attr_icon = "mdi:thermometer-lines"
+    _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
+    _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
+    _attr_native_pressure_unit = UnitOfPressure.HPA
+
+    def __init__(
+        self,
+        coordinator: LocalThermalForecastCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_control_ecmwf_ifs"
+        self._attr_device_info = dr.DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Local Thermal Forecast",
+            model="Hybrid weather and thermal model",
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
+
+    @property
+    def _baseline_points(self) -> tuple:
+        """Derive the baseline from the same selected raw points as an external forecast."""
+        if self.coordinator.data is None:
+            return ()
+        for entity_id in self.coordinator.external_sensors:
+            points = self.coordinator.data.external_forecasts.get(entity_id, ())
+            if points:
+                return points
+        return ()
+
+    @property
+    def _current(self):
+        points = self._baseline_points
+        if not points:
+            return None
+        point = points[0]
+        return point
+
+    @property
+    def available(self) -> bool:
+        return bool(self._baseline_points)
+
+    @property
+    def native_temperature(self) -> float | None:
+        return self._current.raw_temperature if self._current else None
+
+    @property
+    def condition(self) -> str | None:
+        return WMO_CONDITIONS.get(self._current.weather_code) if self._current else None
+
+    @property
+    def humidity(self) -> float | None:
+        return self._current.humidity if self._current else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "forecast_role": "baseline",
+            "forecast_horizon_hours": OUTDOOR_HOURS,
+            "forecast_min_temperature": (
+                round(min(point.raw_temperature for point in self._baseline_points), 1)
+                if self._baseline_points
+                else None
+            ),
+            "forecast_max_temperature": (
+                round(max(point.raw_temperature for point in self._baseline_points), 1)
+                if self._baseline_points
+                else None
+            ),
+            "model": "same_selection_as_corrected",
+            "uses_local_observations": False,
+            "issued_at": (
+                self.coordinator.data.issued_at.isoformat() if self.coordinator.data else None
+            ),
+        }
+
+    async def async_forecast_hourly(self) -> list[Forecast] | None:
+        if not self._baseline_points:
+            return None
+        forecasts: list[Forecast] = []
+        for point in self._baseline_points:
+            forecast: Forecast = {
+                "datetime": point.valid_at.isoformat(),
+                "native_temperature": point.raw_temperature,
+            }
+            optional: dict[str, Any] = {
+                "condition": WMO_CONDITIONS.get(point.weather_code),
+                "native_apparent_temperature": point.apparent_temperature,
+                "humidity": point.humidity,
+                "native_precipitation": point.precipitation,
+                "precipitation_probability": point.precipitation_probability,
+                "cloud_coverage": point.cloud_cover,
+                "native_wind_speed": point.wind_speed,
+                "native_wind_gust_speed": point.wind_gust,
+            }
+            forecast.update({key: value for key, value in optional.items() if value is not None})
+            forecasts.append(forecast)
+        return forecasts
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self.hass is not None:
+            self.hass.async_create_task(
+                self.async_update_listeners(("hourly",)),
+                "update raw control forecast listeners",
+            )
+        super()._handle_coordinator_update()
 
 
 class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], WeatherEntity):
@@ -106,21 +252,37 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         stable_source_id: str,
         source_name: str,
         role: str,
+        humidity_entity_id: str | None,
     ) -> None:
         super().__init__(coordinator)
         self.source_entity_id = source_entity_id
+        self.humidity_entity_id = humidity_entity_id
         self.role = role
         self._attr_unique_id = f"{entry.entry_id}_{role}_{stable_source_id}"
         self._attr_name = f"Previsão {source_name}"
-        if role == "internal":
-            self._attr_icon = "mdi:thermometer-lines"
-        self._attr_device_info = DeviceInfo(
+        self._attr_icon = "mdi:thermometer-lines"
+        self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Local Thermal Forecast",
             model="Hybrid weather and thermal model",
-            entry_type=DeviceEntryType.SERVICE,
+            entry_type=dr.DeviceEntryType.SERVICE,
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh current observations as soon as their source sensors change."""
+        await super().async_added_to_hass()
+        tracked = [self.source_entity_id]
+        if self.humidity_entity_id is not None:
+            tracked.append(self.humidity_entity_id)
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, tracked, self._handle_source_update)
+        )
+
+    @callback
+    def _handle_source_update(self, _event: Event[EventStateChangedData]) -> None:
+        """Write the latest local observation without waiting for forecast polling."""
+        self.async_write_ha_state()
 
     @property
     def _points(self) -> tuple:
@@ -137,33 +299,41 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
 
     @property
     def native_temperature(self) -> float | None:
-        if self.coordinator.data is None:
+        """Return the live absolute temperature from the configured source sensor."""
+        if self.hass is None:
             return None
-        if self.role == "external":
-            return self.coordinator.data.external_temperatures.get(self.source_entity_id)
-        return self.coordinator.data.room_temperatures.get(self.source_entity_id)
+        return current_temperature(self.hass, [self.source_entity_id])
 
     @property
-    def condition(self) -> str | None:
-        if self.role != "external" or self.coordinator.data is None:
-            return None
-        current = self.coordinator.data.external_current.get(self.source_entity_id)
-        return WMO_CONDITIONS.get(current.weather_code) if current else None
+    def condition(self) -> str:
+        """Use a thermal presentation state instead of a weather condition."""
+        return "temperature"
 
     @property
     def humidity(self) -> float | None:
-        if self.role != "external" or self.coordinator.data is None:
+        """Return live humidity from the source device when unambiguous."""
+        if self.hass is None or self.humidity_entity_id is None:
             return None
-        current = self.coordinator.data.external_current.get(self.source_entity_id)
-        return current.humidity if current else None
+        state = self.hass.states.get(self.humidity_entity_id)
+        if state is None or state.state in {"unknown", "unavailable", "none", ""}:
+            return None
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        temperatures = [point.temperature for point in self._points]
         attributes: dict[str, Any] = {
             "source_entity_id": self.source_entity_id,
             "forecast_role": self.role,
             "forecast_horizon_hours": OUTDOOR_HOURS if self.role == "external" else ROOM_HOURS,
+            "forecast_min_temperature": round(min(temperatures), 1) if temperatures else None,
+            "forecast_max_temperature": round(max(temperatures), 1) if temperatures else None,
         }
+        if self.humidity_entity_id is not None:
+            attributes["humidity_source_entity_id"] = self.humidity_entity_id
         if self.coordinator.data is not None:
             attributes["issued_at"] = self.coordinator.data.issued_at.isoformat()
             attributes["source_available"] = self.coordinator.data.source_available.get(
@@ -207,20 +377,6 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
                 "datetime": point.valid_at.isoformat(),
                 "native_temperature": point.temperature,
             }
-            if self.role == "external":
-                optional: dict[str, Any] = {
-                    "condition": WMO_CONDITIONS.get(point.weather_code),
-                    "native_apparent_temperature": point.apparent_temperature,
-                    "humidity": point.humidity,
-                    "native_precipitation": point.precipitation,
-                    "precipitation_probability": point.precipitation_probability,
-                    "cloud_coverage": point.cloud_cover,
-                    "native_wind_speed": point.wind_speed,
-                    "native_wind_gust_speed": point.wind_gust,
-                }
-                forecast.update(
-                    {key: value for key, value in optional.items() if value is not None}
-                )
             forecasts.append(forecast)
         return forecasts
 

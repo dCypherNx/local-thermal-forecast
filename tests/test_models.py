@@ -18,6 +18,8 @@ class CoordinatorDataTests(unittest.TestCase):
         original = models.CoordinatorData(
             issued_at=issued_at,
             external_temperatures={"sensor.front": 21.0, "sensor.back": 20.5},
+            control_current=outdoor,
+            control_forecast=(outdoor,),
             external_current={"sensor.front": outdoor, "sensor.back": outdoor},
             external_forecasts={
                 "sensor.front": (outdoor,),
@@ -38,6 +40,8 @@ class CoordinatorDataTests(unittest.TestCase):
 
         restored = models.CoordinatorData.from_dict(original.as_dict())
 
+        self.assertEqual(restored.control_forecast[0].temperature, 22.5)
+        self.assertEqual(restored.control_current.model, "ecmwf_ifs")
         self.assertEqual(set(restored.external_forecasts), {"sensor.front", "sensor.back"})
         self.assertEqual(restored.external_forecasts["sensor.front"][0].temperature, 22.5)
         self.assertEqual(restored.room_forecasts["sensor.room"][0].temperature, 24.0)

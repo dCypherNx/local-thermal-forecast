@@ -16,6 +16,7 @@ radiation. There is no integration-defined limit on either sensor list.
 - Multi-model Open-Meteo collection with no credentials for non-commercial use.
 - Explainable online recursive regression; no opaque machine-learning dependency.
 - One `WeatherEntity` per selected sensor, with a 24-hour external or 12-hour internal series
+- One untouched ECMWF IFS HRES `WeatherEntity` as an experimental control, with no local-sensor inference
   through Home Assistant's forecast API.
 - Forecast ledger, observations used for verification, learned parameters and metrics restored
   after restart.
@@ -79,10 +80,13 @@ Each selected entity creates one forecast entity;
 forecast points are served by Home Assistant's forecast API and are not copied into sensor state
 attributes.
 
-`weather` is used because it is Home Assistant's only native entity with a forecast API. Indoor
-forecasts therefore use a neutral thermometer icon and intentionally do not invent a cloud/rain
-condition; their entity state can appear as `unknown`, while current temperature and the complete
-hourly forecast remain available through the standard weather attributes and forecast API.
+`weather` is used because it is Home Assistant's native entity with a forecast API. Every forecast
+entity exposes the live absolute temperature from its configured source sensor. When that source
+belongs to a Home Assistant device with exactly one humidity sensor, live humidity is exposed from
+that sensor as well. Indoor forecasts keep a neutral thermometer icon and reuse the home's ambient
+outdoor condition only to satisfy the WeatherEntity condition contract and allow the standard
+frontend to render the live room temperature instead of `unknown`. Forecast temperatures remain
+model outputs and are served separately through the forecast API.
 
 The integration stores forecast snapshots, the later observations and errors associated with
 those forecasts, and learned model parameters. General sensor history remains owned by Recorder.
