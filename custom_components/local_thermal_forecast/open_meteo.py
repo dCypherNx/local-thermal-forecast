@@ -199,7 +199,6 @@ class OpenMeteoClient:
     def __init__(self, session: ClientSession) -> None:
         self._session = session
 
-
     async def _async_fetch_ecmwf(
         self, latitude: float, longitude: float, retrieved_at: datetime
     ) -> ModelForecast | None:
