@@ -145,16 +145,31 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
         )
 
     @property
+    def _baseline_points(self) -> tuple:
+        """Derive the baseline from the same selected raw points as an external forecast."""
+        if self.coordinator.data is None:
+            return ()
+        for entity_id in self.coordinator.external_sensors:
+            points = self.coordinator.data.external_forecasts.get(entity_id, ())
+            if points:
+                return points
+        return ()
+
+    @property
     def _current(self):
-        return self.coordinator.data.control_current if self.coordinator.data else None
+        points = self._baseline_points
+        if not points:
+            return None
+        point = points[0]
+        return point
 
     @property
     def available(self) -> bool:
-        return bool(self.coordinator.data and self.coordinator.data.control_forecast)
+        return bool(self._baseline_points)
 
     @property
     def native_temperature(self) -> float | None:
-        return self._current.temperature if self._current else None
+        return self._current.raw_temperature if self._current else None
 
     @property
     def condition(self) -> str | None:
@@ -170,13 +185,13 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
             "forecast_role": "baseline",
             "forecast_horizon_hours": OUTDOOR_HOURS,
             "forecast_min_temperature": (
-                round(min(point.temperature for point in self.coordinator.data.control_forecast), 1)
-                if self.coordinator.data and self.coordinator.data.control_forecast
+                round(min(point.raw_temperature for point in self._baseline_points), 1)
+                if self._baseline_points
                 else None
             ),
             "forecast_max_temperature": (
-                round(max(point.temperature for point in self.coordinator.data.control_forecast), 1)
-                if self.coordinator.data and self.coordinator.data.control_forecast
+                round(max(point.raw_temperature for point in self._baseline_points), 1)
+                if self._baseline_points
                 else None
             ),
             "model": "same_selection_as_corrected",
@@ -187,13 +202,13 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
         }
 
     async def async_forecast_hourly(self) -> list[Forecast] | None:
-        if self.coordinator.data is None or not self.coordinator.data.control_forecast:
+        if not self._baseline_points:
             return None
         forecasts: list[Forecast] = []
-        for point in self.coordinator.data.control_forecast:
+        for point in self._baseline_points:
             forecast: Forecast = {
                 "datetime": point.valid_at.isoformat(),
-                "native_temperature": point.temperature,
+                "native_temperature": point.raw_temperature,
             }
             optional: dict[str, Any] = {
                 "condition": WMO_CONDITIONS.get(point.weather_code),
