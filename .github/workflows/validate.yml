@@ -45,6 +45,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view v0.3.3-rc.6 >/dev/null 2>&1; then
-            gh release create v0.3.3-rc.6 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.3-rc.6" --prerelease --notes "Release candidate with a raw baseline using the same per-horizon model selection as the corrected forecast."
+          if ! gh release view v0.3.3-rc.7 >/dev/null 2>&1; then
+            gh release create v0.3.3-rc.7 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.3-rc.7" --prerelease --notes "Release candidate deriving the baseline directly from the raw values of the selected corrected forecast points."
           fi
