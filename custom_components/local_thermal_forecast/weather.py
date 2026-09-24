@@ -46,10 +46,7 @@ def _humidity_sensor_for_source(
         if entry.entity_id == source_entity_id:
             continue
         state = hass.states.get(entry.entity_id)
-        if (
-            state is not None
-            and state.attributes.get("device_class") == SensorDeviceClass.HUMIDITY
-        ):
+        if state is not None and state.attributes.get("device_class") == SensorDeviceClass.HUMIDITY:
             candidates.append(entry.entity_id)
     return candidates[0] if len(candidates) == 1 else None
 
