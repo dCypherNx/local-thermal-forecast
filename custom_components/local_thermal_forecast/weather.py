@@ -169,6 +169,16 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
         return {
             "forecast_role": "control",
             "forecast_horizon_hours": OUTDOOR_HOURS,
+            "forecast_min_temperature": (
+                round(min(point.temperature for point in self.coordinator.data.control_forecast), 1)
+                if self.coordinator.data and self.coordinator.data.control_forecast
+                else None
+            ),
+            "forecast_max_temperature": (
+                round(max(point.temperature for point in self.coordinator.data.control_forecast), 1)
+                if self.coordinator.data and self.coordinator.data.control_forecast
+                else None
+            ),
             "model": MODEL_NAMES["ecmwf_ifs"],
             "uses_local_observations": False,
             "issued_at": (
@@ -280,9 +290,9 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         return current_temperature(self.hass, [self.source_entity_id])
 
     @property
-    def condition(self) -> str:
-        """Expose a neutral thermal state so the frontend does not render weather glyphs."""
-        return "temperature"
+    def condition(self) -> None:
+        """Do not expose meteorological conditions on thermal forecast entities."""
+        return None
 
     @property
     def humidity(self) -> float | None:
@@ -353,18 +363,6 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
                 "native_temperature": point.temperature,
             }
             if self.role == "external":
-                optional: dict[str, Any] = {
-                    "native_apparent_temperature": point.apparent_temperature,
-                    "humidity": point.humidity,
-                    "native_precipitation": point.precipitation,
-                    "precipitation_probability": point.precipitation_probability,
-                    "cloud_coverage": point.cloud_cover,
-                    "native_wind_speed": point.wind_speed,
-                    "native_wind_gust_speed": point.wind_gust,
-                }
-                forecast.update(
-                    {key: value for key, value in optional.items() if value is not None}
-                )
             forecasts.append(forecast)
         return forecasts
 
