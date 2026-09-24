@@ -162,8 +162,15 @@ class CoordinatorData:
         return cls(
             issued_at=datetime.fromisoformat(data["issued_at"]),
             external_temperatures=data.get("external_temperatures", {}),
-            control_current=(HybridForecastPoint.from_dict(data["control_current"]) if data.get("control_current") else None),
-            control_forecast=tuple(HybridForecastPoint.from_dict(point) for point in data.get("control_forecast", [])),
+            control_current=(
+                HybridForecastPoint.from_dict(data["control_current"])
+                if data.get("control_current")
+                else None
+            ),
+            control_forecast=tuple(
+                HybridForecastPoint.from_dict(point)
+                for point in data.get("control_forecast", [])
+            ),
             external_current=external_current,
             external_forecasts=external_forecasts,
             room_temperatures=data.get("room_temperatures", {}),
