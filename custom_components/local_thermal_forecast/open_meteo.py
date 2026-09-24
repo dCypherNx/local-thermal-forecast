@@ -229,11 +229,9 @@ class OpenMeteoClient:
             if control is None:
                 return None
             future = tuple(point for point in control.points if point.valid_at >= retrieved_at)
-            return (
-                ModelForecast(PRIMARY_MODEL, future)
-                if len(future) >= OUTDOOR_HOURS + 1
-                else None
-            )
+            if len(future) < OUTDOOR_HOURS + 1:
+                return None
+            return ModelForecast(PRIMARY_MODEL, future)
         except (TimeoutError, ClientError, OpenMeteoError) as err:
             _LOGGER.warning("ECMWF control fetch failed: %s", err)
             return None
