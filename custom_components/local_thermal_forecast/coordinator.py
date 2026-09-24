@@ -100,8 +100,8 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             for model, forecast in bundle.forecasts.items()
         }
         primary = next(iter(forecasts.values()))
-        control_source = forecasts[PRIMARY_MODEL]
-        control_current_source = control_source.points[0]
+        control_source = forecasts.get(PRIMARY_MODEL)
+        control_current_source = control_source.points[0] if control_source else None
         control_current = HybridForecastPoint(
             valid_at=control_current_source.valid_at,
             temperature=control_current_source.temperature,
@@ -115,7 +115,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             cloud_cover=control_current_source.cloud_cover,
             wind_speed=control_current_source.wind_speed,
             wind_gust=control_current_source.wind_gust,
-        )
+        ) if control_current_source else None
         control_forecast = tuple(
             HybridForecastPoint(
                 valid_at=point.valid_at,
@@ -132,7 +132,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 wind_gust=point.wind_gust,
             )
             for point in control_source.points[1 : OUTDOOR_HOURS + 1]
-        )
+        ) if control_source else ()
         external_temperatures: dict[str, float] = {}
         external_current: dict[str, HybridForecastPoint] = {}
         external_slopes: dict[str, float] = {}
