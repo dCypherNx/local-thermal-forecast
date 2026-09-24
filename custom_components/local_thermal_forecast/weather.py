@@ -19,8 +19,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -140,12 +139,12 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_control_ecmwf_ifs"
-        self._attr_device_info = DeviceInfo(
+        self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Local Thermal Forecast",
             model="Hybrid weather and thermal model",
-            entry_type=DeviceEntryType.SERVICE,
+            entry_type=dr.DeviceEntryType.SERVICE,
         )
 
     @property
@@ -241,12 +240,12 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         self._attr_name = f"Previsão {source_name}"
         if role == "internal":
             self._attr_icon = "mdi:thermometer-lines"
-        self._attr_device_info = DeviceInfo(
+        self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Local Thermal Forecast",
             model="Hybrid weather and thermal model",
-            entry_type=DeviceEntryType.SERVICE,
+            entry_type=dr.DeviceEntryType.SERVICE,
         )
 
     async def async_added_to_hass(self) -> None:
