@@ -16,6 +16,7 @@ radiation. There is no integration-defined limit on either sensor list.
 - Multi-model Open-Meteo collection with no credentials for non-commercial use.
 - Explainable online recursive regression; no opaque machine-learning dependency.
 - One `WeatherEntity` per selected sensor, with a 24-hour external or 12-hour internal series
+- One untouched ECMWF IFS HRES `WeatherEntity` as an experimental control, with no local-sensor inference
   through Home Assistant's forecast API.
 - Forecast ledger, observations used for verification, learned parameters and metrics restored
   after restart.
