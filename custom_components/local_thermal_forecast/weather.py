@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from hashlib import sha1
 from typing import Any
 
@@ -24,6 +25,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from . import IntegrationRuntime
 from .const import DOMAIN, MODEL_NAMES, OUTDOOR_HOURS, ROOM_HOURS
@@ -332,6 +334,30 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
             "forecast_min_temperature": round(min(temperatures), 1) if temperatures else None,
             "forecast_max_temperature": round(max(temperatures), 1) if temperatures else None,
         }
+        if self.role == "internal" and self.coordinator.data is not None:
+            issued_local = self.coordinator.data.issued_at.astimezone(
+                dt_util.get_time_zone(self.hass.config.time_zone)
+            )
+            overnight_end = issued_local.replace(hour=9, minute=0, second=0, microsecond=0)
+            if issued_local >= overnight_end:
+                overnight_end += timedelta(days=1)
+            overnight_points = [
+                point
+                for point in self._points
+                if point.valid_at.astimezone(dt_util.get_time_zone(self.hass.config.time_zone))
+                <= overnight_end
+            ]
+            if overnight_points:
+                overnight_min = min(overnight_points, key=lambda point: point.temperature)
+                overnight_max = max(overnight_points, key=lambda point: point.temperature)
+                attributes.update(
+                    {
+                        "overnight_min_temperature": round(overnight_min.temperature, 1),
+                        "overnight_min_temperature_at": overnight_min.valid_at.isoformat(),
+                        "overnight_max_temperature": round(overnight_max.temperature, 1),
+                        "overnight_max_temperature_at": overnight_max.valid_at.isoformat(),
+                    }
+                )
         if self.humidity_entity_id is not None:
             attributes["humidity_source_entity_id"] = self.humidity_entity_id
         if self.coordinator.data is not None:
