@@ -101,3 +101,17 @@ jobs:
             ARGS+=(--prerelease)
           fi
           gh release create "${ARGS[@]}"
+
+  publish-rc:
+    if: github.ref == 'refs/heads/feat/diagnostic-export'
+    needs: [lint-and-test, hacs, hassfest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish HACS release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view v0.3.4-rc.1 >/dev/null 2>&1; then
+            gh release create v0.3.4-rc.1 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.4-rc.1" --prerelease --notes "Adds an anonymized validation dataset to Home Assistant diagnostics and retains the model inputs required for forecast auditing."
+          fi
