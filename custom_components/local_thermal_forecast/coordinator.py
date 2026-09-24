@@ -18,7 +18,6 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     HISTORY_TOLERANCE,
     OUTDOOR_HOURS,
-    PRIMARY_MODEL,
     ROOM_HOURS,
 )
 from .hybrid import HybridSystem
@@ -100,47 +99,6 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             for model, forecast in bundle.forecasts.items()
         }
         primary = next(iter(forecasts.values()))
-        control_source = forecasts.get(PRIMARY_MODEL)
-        control_current_source = control_source.points[0] if control_source else None
-        control_current = (
-            HybridForecastPoint(
-                valid_at=control_current_source.valid_at,
-                temperature=control_current_source.temperature,
-                raw_temperature=control_current_source.temperature,
-                model=PRIMARY_MODEL,
-                apparent_temperature=control_current_source.apparent_temperature,
-                humidity=control_current_source.humidity,
-                precipitation=control_current_source.precipitation,
-                precipitation_probability=control_current_source.precipitation_probability,
-                weather_code=control_current_source.weather_code,
-                cloud_cover=control_current_source.cloud_cover,
-                wind_speed=control_current_source.wind_speed,
-                wind_gust=control_current_source.wind_gust,
-            )
-            if control_current_source
-            else None
-        )
-        control_forecast = (
-            tuple(
-                HybridForecastPoint(
-                    valid_at=point.valid_at,
-                    temperature=point.temperature,
-                    raw_temperature=point.temperature,
-                    model=PRIMARY_MODEL,
-                    apparent_temperature=point.apparent_temperature,
-                    humidity=point.humidity,
-                    precipitation=point.precipitation,
-                    precipitation_probability=point.precipitation_probability,
-                    weather_code=point.weather_code,
-                    cloud_cover=point.cloud_cover,
-                    wind_speed=point.wind_speed,
-                    wind_gust=point.wind_gust,
-                )
-                for point in control_source.points[1 : OUTDOOR_HOURS + 1]
-            )
-            if control_source
-            else ()
-        )
         external_temperatures: dict[str, float] = {}
         external_current: dict[str, HybridForecastPoint] = {}
         external_slopes: dict[str, float] = {}
@@ -257,6 +215,52 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 )
             room_prediction_arrays[entity_id] = values
             room_forecasts[entity_id] = tuple(points)
+
+        control_current = None
+        control_forecast: tuple[HybridForecastPoint, ...] = ()
+        if self.external_sensors:
+            control_entity_id = self.external_sensors[0]
+            control_models = selected_models.get(control_entity_id, {})
+            if control_models:
+                current_model = control_models[1]
+                current_source = forecasts[current_model].points[0]
+                control_current = HybridForecastPoint(
+                    valid_at=current_source.valid_at,
+                    temperature=current_source.temperature,
+                    raw_temperature=current_source.temperature,
+                    model=current_model,
+                    apparent_temperature=current_source.apparent_temperature,
+                    humidity=current_source.humidity,
+                    precipitation=current_source.precipitation,
+                    precipitation_probability=current_source.precipitation_probability,
+                    weather_code=current_source.weather_code,
+                    cloud_cover=current_source.cloud_cover,
+                    wind_speed=current_source.wind_speed,
+                    wind_gust=current_source.wind_gust,
+                )
+                control_forecast = tuple(
+                    HybridForecastPoint(
+                        valid_at=forecasts[control_models[horizon]].points[horizon].valid_at,
+                        temperature=forecasts[control_models[horizon]].points[horizon].temperature,
+                        raw_temperature=forecasts[control_models[horizon]].points[horizon].temperature,
+                        model=control_models[horizon],
+                        apparent_temperature=forecasts[control_models[horizon]].points[
+                            horizon
+                        ].apparent_temperature,
+                        humidity=forecasts[control_models[horizon]].points[horizon].humidity,
+                        precipitation=forecasts[control_models[horizon]].points[
+                            horizon
+                        ].precipitation,
+                        precipitation_probability=forecasts[control_models[horizon]].points[
+                            horizon
+                        ].precipitation_probability,
+                        weather_code=forecasts[control_models[horizon]].points[horizon].weather_code,
+                        cloud_cover=forecasts[control_models[horizon]].points[horizon].cloud_cover,
+                        wind_speed=forecasts[control_models[horizon]].points[horizon].wind_speed,
+                        wind_gust=forecasts[control_models[horizon]].points[horizon].wind_gust,
+                    )
+                    for horizon in range(1, OUTDOOR_HOURS + 1)
+                )
 
         data = CoordinatorData(
             issued_at=bundle.retrieved_at,
