@@ -58,9 +58,15 @@ class NormalizationTests(unittest.TestCase):
             ),
         )
         result = open_meteo.resample_forecast(source, retrieved_at)
-        self.assertEqual(result.points[1].valid_at, datetime(2026, 9, 23, 11, 17, tzinfo=UTC))
-        self.assertEqual(result.points[24].valid_at, datetime(2026, 9, 24, 10, 17, tzinfo=UTC))
-        self.assertAlmostEqual(result.points[0].temperature, 20.283333, places=5)
+        self.assertEqual(
+            result.points[1].valid_at,
+            datetime(2026, 9, 23, 11, 17, 32, tzinfo=UTC),
+        )
+        self.assertEqual(
+            result.points[24].valid_at,
+            datetime(2026, 9, 24, 10, 17, 32, tzinfo=UTC),
+        )
+        self.assertAlmostEqual(result.points[0].temperature, 20.292222, places=5)
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ def resample_forecast(
     forecast: ModelForecast, retrieved_at: datetime, hours: int = OUTDOOR_HOURS
 ) -> ModelForecast:
     """Interpolate hourly provider data to exact lead times from retrieval."""
-    start = retrieved_at.astimezone(UTC).replace(second=0, microsecond=0)
+    start = retrieved_at.astimezone(UTC)
     source = forecast.points
     points: list[WeatherPoint] = []
     for horizon in range(hours + 1):

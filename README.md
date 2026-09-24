@@ -28,7 +28,7 @@ for severe-weather decisions.
 The product has four forecast types. This release implements the first two without pretending
 that the other two already exist:
 
-| Type | Horizon | Status in 0.3.1 |
+| Type | Horizon | Status in 0.3.2 |
 | --- | --- | --- |
 | External temperature at home | 24 hours | Implemented, one calibrated forecast per selected sensor |
 | Temperature of each room | 12 hours | Implemented, one independent thermal forecast per selected sensor |
