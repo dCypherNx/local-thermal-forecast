@@ -121,7 +121,7 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
     """Untouched numerical-model forecast used as the experimental control."""
 
     _attr_has_entity_name = True
-    _attr_name = "Controle ECMWF IFS HRES"
+    _attr_name = "Previsão Base"
     _attr_icon = "mdi:thermometer-lines"
     _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
@@ -167,7 +167,7 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "forecast_role": "control",
+            "forecast_role": "baseline",
             "forecast_horizon_hours": OUTDOOR_HOURS,
             "forecast_min_temperature": (
                 round(min(point.temperature for point in self.coordinator.data.control_forecast), 1)
@@ -179,7 +179,7 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
                 if self.coordinator.data and self.coordinator.data.control_forecast
                 else None
             ),
-            "model": MODEL_NAMES["ecmwf_ifs"],
+            "model": "same_selection_as_corrected",
             "uses_local_observations": False,
             "issued_at": (
                 self.coordinator.data.issued_at.isoformat() if self.coordinator.data else None
