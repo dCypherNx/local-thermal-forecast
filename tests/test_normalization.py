@@ -66,7 +66,7 @@ class NormalizationTests(unittest.TestCase):
         self.assertEqual(len(bundle.forecasts["ecmwf_ifs"].points), 50)
         self.assertIsNone(bundle.forecasts["ecmwf_ifs"].points[0].humidity)
 
-    def test_resampling_aligns_to_full_civil_hours(self) -> None:
+    def test_resampling_keeps_issue_anchor_then_full_civil_hours(self) -> None:
         retrieved_at = datetime(2026, 9, 23, 10, 17, 32, tzinfo=UTC)
         source = models.ModelForecast(
             "ecmwf_ifs",
@@ -79,16 +79,17 @@ class NormalizationTests(unittest.TestCase):
             ),
         )
         result = open_meteo.resample_forecast(source, retrieved_at)
+        self.assertEqual(result.points[0].valid_at, retrieved_at)
+        self.assertAlmostEqual(result.points[0].temperature, 20.292222, places=5)
         self.assertEqual(
             result.points[1].valid_at,
-            datetime(2026, 9, 23, 12, 0, 0, tzinfo=UTC),
+            datetime(2026, 9, 23, 11, 0, 0, tzinfo=UTC),
         )
         self.assertEqual(
             result.points[24].valid_at,
-            datetime(2026, 9, 24, 11, 0, 0, tzinfo=UTC),
+            datetime(2026, 9, 24, 10, 0, 0, tzinfo=UTC),
         )
-        self.assertEqual(result.points[0].valid_at, datetime(2026, 9, 23, 11, tzinfo=UTC))
-        self.assertAlmostEqual(result.points[0].temperature, 21.0, places=5)
+
 
 
 if __name__ == "__main__":
