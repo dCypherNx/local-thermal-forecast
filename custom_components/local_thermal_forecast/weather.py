@@ -362,7 +362,6 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
                 "datetime": point.valid_at.isoformat(),
                 "native_temperature": point.temperature,
             }
-            if self.role == "external":
             forecasts.append(forecast)
         return forecasts
 
