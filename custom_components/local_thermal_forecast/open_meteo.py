@@ -61,7 +61,8 @@ def normalize_response(
 
     times = [_parse_time(value) for value in hourly["time"]]
     forecasts: dict[str, ModelForecast] = {}
-    for model in MODEL_IDS:
+    models = MODEL_IDS if any(f"temperature_2m_{model}" in hourly for model in MODEL_IDS) else (PRIMARY_MODEL,)
+    for model in models:
         points: list[WeatherPoint] = []
         for index, valid_at in enumerate(times):
             temperature = _value(hourly, "temperature_2m", model, index)
@@ -88,7 +89,7 @@ def normalize_response(
                     ),
                 )
             )
-        if len(points) >= OUTDOOR_HOURS + 2:
+        if len(points) >= OUTDOOR_HOURS + 1:
             forecasts[model] = ModelForecast(model, tuple(points[: OUTDOOR_HOURS + 2]))
 
     if not forecasts:
