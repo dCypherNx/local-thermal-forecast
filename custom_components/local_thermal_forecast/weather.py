@@ -91,7 +91,7 @@ async def async_setup_entry(
     """Create one weather forecast for every configured temperature sensor."""
     runtime: IntegrationRuntime = entry.runtime_data
     registry = er.async_get(hass)
-    entities: list[WeatherEntity] = []
+    entities: list[WeatherEntity] = [RawControlForecast(runtime.coordinator, entry)]
     for role, source_ids in (
         ("external", runtime.coordinator.external_sensors),
         ("internal", runtime.coordinator.room_sensors),
@@ -114,7 +114,6 @@ async def async_setup_entry(
                     _humidity_sensor_for_source(hass, registry, source_entity_id),
                 )
             )
-    entities.append(RawControlForecast(runtime.coordinator, entry))
     async_add_entities(entities)
 
 
@@ -123,7 +122,7 @@ class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], Wea
 
     _attr_has_entity_name = True
     _attr_name = "Controle ECMWF IFS HRES"
-    _attr_icon = "mdi:weather-partly-cloudy"
+    _attr_icon = "mdi:thermometer-lines"
     _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
@@ -236,8 +235,7 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         self.role = role
         self._attr_unique_id = f"{entry.entry_id}_{role}_{stable_source_id}"
         self._attr_name = f"Previsão {source_name}"
-        if role == "internal":
-            self._attr_icon = "mdi:thermometer-lines"
+        self._attr_icon = "mdi:thermometer-lines"
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
@@ -282,20 +280,9 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         return current_temperature(self.hass, [self.source_entity_id])
 
     @property
-    def condition(self) -> str | None:
-        """Return the ambient weather condition required by WeatherEntity.
-
-        Indoor forecasts use the home's outdoor condition. Their icon remains a
-        thermometer, while providing a valid condition lets Home Assistant render
-        the live room temperature instead of "unknown".
-        """
-        if self.coordinator.data is None:
-            return None
-        if self.role == "external":
-            current = self.coordinator.data.external_current.get(self.source_entity_id)
-        else:
-            current = next(iter(self.coordinator.data.external_current.values()), None)
-        return WMO_CONDITIONS.get(current.weather_code) if current else None
+    def condition(self) -> str:
+        """Expose a neutral thermal state so the frontend does not render weather glyphs."""
+        return "temperature"
 
     @property
     def humidity(self) -> float | None:
@@ -312,10 +299,13 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        temperatures = [point.temperature for point in self._points]
         attributes: dict[str, Any] = {
             "source_entity_id": self.source_entity_id,
             "forecast_role": self.role,
             "forecast_horizon_hours": OUTDOOR_HOURS if self.role == "external" else ROOM_HOURS,
+            "forecast_min_temperature": round(min(temperatures), 1) if temperatures else None,
+            "forecast_max_temperature": round(max(temperatures), 1) if temperatures else None,
         }
         if self.humidity_entity_id is not None:
             attributes["humidity_source_entity_id"] = self.humidity_entity_id
@@ -364,7 +354,6 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
             }
             if self.role == "external":
                 optional: dict[str, Any] = {
-                    "condition": WMO_CONDITIONS.get(point.weather_code),
                     "native_apparent_temperature": point.apparent_temperature,
                     "humidity": point.humidity,
                     "native_precipitation": point.precipitation,
