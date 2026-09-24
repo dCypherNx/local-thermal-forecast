@@ -54,7 +54,7 @@ async def async_get_config_entry_diagnostics(
         "export": {
             "format": "local_thermal_forecast_validation",
             "schema_version": 1,
-            "integration_version": "0.3.4-rc.1",
+            "integration_version": "0.3.4-rc.2",
             "period_start": min(issued) if issued else None,
             "period_end": max(issued) if issued else None,
             "snapshot_count": len(snapshots),
