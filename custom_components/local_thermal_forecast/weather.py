@@ -121,7 +121,6 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-
 class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], WeatherEntity):
     """Untouched numerical-model forecast used as the experimental control."""
 
