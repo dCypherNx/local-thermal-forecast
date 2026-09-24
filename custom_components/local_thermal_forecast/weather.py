@@ -6,7 +6,11 @@ from hashlib import sha1
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.components.weather import Forecast, WeatherEntity, WeatherEntityFeature
+from homeassistant.components.weather import (
+    Forecast,
+    WeatherEntity,
+    WeatherEntityFeature,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfPrecipitationDepth,
