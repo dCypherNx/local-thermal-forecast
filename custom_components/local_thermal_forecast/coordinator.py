@@ -238,29 +238,27 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     wind_speed=current_source.wind_speed,
                     wind_gust=current_source.wind_gust,
                 )
-                control_forecast = tuple(
-                    HybridForecastPoint(
-                        valid_at=forecasts[control_models[horizon]].points[horizon].valid_at,
-                        temperature=forecasts[control_models[horizon]].points[horizon].temperature,
-                        raw_temperature=forecasts[control_models[horizon]].points[horizon].temperature,
-                        model=control_models[horizon],
-                        apparent_temperature=forecasts[control_models[horizon]].points[
-                            horizon
-                        ].apparent_temperature,
-                        humidity=forecasts[control_models[horizon]].points[horizon].humidity,
-                        precipitation=forecasts[control_models[horizon]].points[
-                            horizon
-                        ].precipitation,
-                        precipitation_probability=forecasts[control_models[horizon]].points[
-                            horizon
-                        ].precipitation_probability,
-                        weather_code=forecasts[control_models[horizon]].points[horizon].weather_code,
-                        cloud_cover=forecasts[control_models[horizon]].points[horizon].cloud_cover,
-                        wind_speed=forecasts[control_models[horizon]].points[horizon].wind_speed,
-                        wind_gust=forecasts[control_models[horizon]].points[horizon].wind_gust,
+                control_points: list[HybridForecastPoint] = []
+                for horizon in range(1, OUTDOOR_HOURS + 1):
+                    model = control_models[horizon]
+                    source = forecasts[model].points[horizon]
+                    control_points.append(
+                        HybridForecastPoint(
+                            valid_at=source.valid_at,
+                            temperature=source.temperature,
+                            raw_temperature=source.temperature,
+                            model=model,
+                            apparent_temperature=source.apparent_temperature,
+                            humidity=source.humidity,
+                            precipitation=source.precipitation,
+                            precipitation_probability=source.precipitation_probability,
+                            weather_code=source.weather_code,
+                            cloud_cover=source.cloud_cover,
+                            wind_speed=source.wind_speed,
+                            wind_gust=source.wind_gust,
+                        )
                     )
-                    for horizon in range(1, OUTDOOR_HOURS + 1)
-                )
+                control_forecast = tuple(control_points)
 
         data = CoordinatorData(
             issued_at=bundle.retrieved_at,
