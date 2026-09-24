@@ -16,6 +16,8 @@ _LOGGER = logging.getLogger(__name__)
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 ECMWF_API_URL = "https://api.open-meteo.com/v1/ecmwf"
+ECMWF_CONTROL_FIELDS = ("temperature_2m",)
+
 HOURLY_FIELDS = (
     "temperature_2m",
     "apparent_temperature",
@@ -94,7 +96,7 @@ def normalize_response(
                 )
             )
         if len(points) >= OUTDOOR_HOURS + 1:
-            forecasts[model] = ModelForecast(model, tuple(points[: OUTDOOR_HOURS + 2]))
+            forecasts[model] = ModelForecast(model, tuple(points))
 
     if not forecasts:
         raise OpenMeteoError("No configured model returned a complete 24-hour forecast")
@@ -206,12 +208,10 @@ class OpenMeteoClient:
         params = {
             "latitude": str(latitude),
             "longitude": str(longitude),
-            "hourly": ",".join(HOURLY_FIELDS),
-            "forecast_hours": str(OUTDOOR_HOURS + 2),
+            "hourly": ",".join(ECMWF_CONTROL_FIELDS),
+            "forecast_hours": str(OUTDOOR_HOURS + 26),
             "timezone": "UTC",
             "temperature_unit": "celsius",
-            "wind_speed_unit": "kmh",
-            "precipitation_unit": "mm",
         }
         try:
             async with self._session.get(ECMWF_API_URL, params=params, timeout=30) as response:
@@ -225,7 +225,11 @@ class OpenMeteoClient:
                 requested_longitude=longitude,
                 retrieved_at=retrieved_at,
             )
-            return bundle.forecasts.get(PRIMARY_MODEL)
+            control = bundle.forecasts.get(PRIMARY_MODEL)
+            if control is None:
+                return None
+            future = tuple(point for point in control.points if point.valid_at >= retrieved_at)
+            return ModelForecast(PRIMARY_MODEL, future) if len(future) >= OUTDOOR_HOURS + 1 else None
         except (TimeoutError, ClientError, OpenMeteoError) as err:
             _LOGGER.warning("ECMWF control fetch failed: %s", err)
             return None
