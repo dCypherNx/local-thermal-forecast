@@ -9,5 +9,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/dCypherNx/local-thermal-forecast/issues",
   "single_config_entry": true,
-  "version": "0.3.3-rc.9"
+  "version": "0.3.3"
 }
