@@ -30,6 +30,7 @@ from .const import DOMAIN, MODEL_NAMES, OUTDOOR_HOURS, ROOM_HOURS
 from .coordinator import LocalThermalForecastCoordinator
 from .observation import current_temperature
 
+
 def _humidity_sensor_for_source(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
