@@ -45,6 +45,27 @@ class NormalizationTests(unittest.TestCase):
         self.assertEqual(bundle.forecasts["icon_global"].points[0].weather_code, 3)
         self.assertEqual(bundle.gateway, "open_meteo")
 
+    def test_unsuffixed_ecmwf_response_is_normalized_without_optional_fields(self) -> None:
+        start = datetime(2026, 9, 24, tzinfo=UTC)
+        times = [(start + timedelta(hours=index)).strftime("%Y-%m-%dT%H:%M") for index in range(50)]
+        bundle = open_meteo.normalize_response(
+            {
+                "latitude": -23.5,
+                "longitude": -46.6,
+                "elevation": 737,
+                "hourly": {
+                    "time": times,
+                    "temperature_2m": [15.0 + index / 10 for index in range(50)],
+                },
+            },
+            requested_latitude=-23.55,
+            requested_longitude=-46.63,
+            retrieved_at=start + timedelta(hours=3, minutes=20),
+        )
+        self.assertEqual(set(bundle.forecasts), {"ecmwf_ifs"})
+        self.assertEqual(len(bundle.forecasts["ecmwf_ifs"].points), 50)
+        self.assertIsNone(bundle.forecasts["ecmwf_ifs"].points[0].humidity)
+
     def test_resampling_produces_exact_hourly_leads(self) -> None:
         retrieved_at = datetime(2026, 9, 23, 10, 17, 32, tzinfo=UTC)
         source = models.ModelForecast(
