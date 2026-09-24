@@ -24,10 +24,8 @@ jobs:
       - run: python -m pip install ruff==0.13.2
       - name: Ruff lint
         run: ruff check .
-      - name: Ruff format
-        run: ruff format --check .
-      - name: Unit tests
-        run: python -m unittest discover -s tests -v
+      - name: Ruff format\n        run: ruff format --check --diff .
+      - name: Unit tests\n        if: always()\n        run: python -m unittest discover -s tests -v
 
   hacs:
     runs-on: ubuntu-latest
