@@ -290,9 +290,9 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         return current_temperature(self.hass, [self.source_entity_id])
 
     @property
-    def condition(self) -> None:
-        """Do not expose meteorological conditions on thermal forecast entities."""
-        return None
+    def condition(self) -> str:
+        """Use a thermal presentation state instead of a weather condition."""
+        return "temperature"
 
     @property
     def humidity(self) -> float | None:
