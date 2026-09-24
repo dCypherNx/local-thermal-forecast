@@ -153,9 +153,7 @@ def resample_forecast(
         nearest = left if fraction < 0.5 else right
         return WeatherPoint(
             valid_at=target,
-            temperature=_interpolate_optional(
-                left.temperature, right.temperature, fraction
-            ),
+            temperature=_interpolate_optional(left.temperature, right.temperature, fraction),
             apparent_temperature=_interpolate_optional(
                 left.apparent_temperature, right.apparent_temperature, fraction
             ),
