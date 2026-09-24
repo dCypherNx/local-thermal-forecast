@@ -38,16 +38,3 @@ jobs:
       - uses: home-assistant/actions/hassfest@master
 
 
-  publish-rc:
-    if: github.ref == 'refs/heads/fix/local-observations-ui'
-    needs: [lint-and-test, hacs, hassfest]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Publish HACS release candidate
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! gh release view v0.3.3-rc.9 >/dev/null 2>&1; then
-            gh release create v0.3.3-rc.9 --target "$GITHUB_SHA" --title "Local Thermal Forecast v0.3.3-rc.9" --prerelease --notes "Release candidate aligning forecasts to full hours and starting coordinator periodic refresh during setup."
-          fi
