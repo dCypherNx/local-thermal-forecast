@@ -112,7 +112,101 @@ async def async_setup_entry(
                     _humidity_sensor_for_source(hass, registry, source_entity_id),
                 )
             )
+    entities.append(RawControlForecast(runtime.coordinator, entry))
     async_add_entities(entities)
+
+
+
+class RawControlForecast(CoordinatorEntity[LocalThermalForecastCoordinator], WeatherEntity):
+    """Untouched numerical-model forecast used as the experimental control."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Controle ECMWF IFS HRES"
+    _attr_icon = "mdi:weather-partly-cloudy"
+    _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
+    _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
+    _attr_native_pressure_unit = UnitOfPressure.HPA
+
+    def __init__(
+        self,
+        coordinator: LocalThermalForecastCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_control_ecmwf_ifs"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Local Thermal Forecast",
+            model="Hybrid weather and thermal model",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    @property
+    def _current(self):
+        return self.coordinator.data.control_current if self.coordinator.data else None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.coordinator.data and self.coordinator.data.control_forecast)
+
+    @property
+    def native_temperature(self) -> float | None:
+        return self._current.temperature if self._current else None
+
+    @property
+    def condition(self) -> str | None:
+        return WMO_CONDITIONS.get(self._current.weather_code) if self._current else None
+
+    @property
+    def humidity(self) -> float | None:
+        return self._current.humidity if self._current else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "forecast_role": "control",
+            "forecast_horizon_hours": OUTDOOR_HOURS,
+            "model": MODEL_NAMES["ecmwf_ifs"],
+            "uses_local_observations": False,
+            "issued_at": (
+                self.coordinator.data.issued_at.isoformat() if self.coordinator.data else None
+            ),
+        }
+
+    async def async_forecast_hourly(self) -> list[Forecast] | None:
+        if self.coordinator.data is None or not self.coordinator.data.control_forecast:
+            return None
+        forecasts: list[Forecast] = []
+        for point in self.coordinator.data.control_forecast:
+            forecast: Forecast = {
+                "datetime": point.valid_at.isoformat(),
+                "native_temperature": point.temperature,
+            }
+            optional: dict[str, Any] = {
+                "condition": WMO_CONDITIONS.get(point.weather_code),
+                "native_apparent_temperature": point.apparent_temperature,
+                "humidity": point.humidity,
+                "native_precipitation": point.precipitation,
+                "precipitation_probability": point.precipitation_probability,
+                "cloud_coverage": point.cloud_cover,
+                "native_wind_speed": point.wind_speed,
+                "native_wind_gust_speed": point.wind_gust,
+            }
+            forecast.update({key: value for key, value in optional.items() if value is not None})
+            forecasts.append(forecast)
+        return forecasts
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self.hass is not None:
+            self.hass.async_create_task(
+                self.async_update_listeners(("hourly",)),
+                "update raw control forecast listeners",
+            )
+        super()._handle_coordinator_update()
 
 
 class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], WeatherEntity):
