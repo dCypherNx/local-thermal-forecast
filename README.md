@@ -90,7 +90,7 @@ model outputs and are served separately through the forecast API.
 
 The integration stores forecast snapshots, the later observations and errors associated with
 those forecasts, and learned model parameters. General sensor history remains owned by Recorder.
-Retention and update cadence are available under integration options.
+Retention and update cadence are available under integration options.\n\nFor model evaluation, use **Settings → Devices & services → Local Thermal Forecast → Download diagnostics**. The diagnostics JSON includes the anonymized forecast ledger, issued/valid timestamps, raw and corrected predictions, later observations, errors, selected models, retained thermal-model inputs, and aggregate validation metrics. Exact coordinates and Home Assistant entity IDs are not exported.
 
 ## Data provenance
 

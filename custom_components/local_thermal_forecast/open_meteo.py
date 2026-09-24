@@ -133,15 +133,14 @@ def _interpolate_optional(
 def resample_forecast(
     forecast: ModelForecast, retrieved_at: datetime, hours: int = OUTDOOR_HOURS
 ) -> ModelForecast:
-    """Interpolate provider data to full civil-hour forecast targets."""
+    """Keep point zero at issue time and align future targets to civil hours."""
     retrieved = retrieved_at.astimezone(UTC)
-    start = retrieved.replace(minute=0, second=0, microsecond=0)
-    if retrieved > start:
-        start += timedelta(hours=1)
+    first_hour = retrieved.replace(minute=0, second=0, microsecond=0)
+    if retrieved > first_hour:
+        first_hour += timedelta(hours=1)
     source = forecast.points
-    points: list[WeatherPoint] = []
-    for horizon in range(hours + 1):
-        target = start + timedelta(hours=horizon)
+
+    def interpolate(target: datetime) -> WeatherPoint:
         right_index = next(
             (index for index, point in enumerate(source) if point.valid_at >= target),
             len(source) - 1,
@@ -152,47 +151,45 @@ def resample_forecast(
         span = (right.valid_at - left.valid_at).total_seconds()
         fraction = 0.0 if span <= 0 else (target - left.valid_at).total_seconds() / span
         nearest = left if fraction < 0.5 else right
-        points.append(
-            WeatherPoint(
-                valid_at=target,
-                temperature=float(
-                    _interpolate_optional(left.temperature, right.temperature, fraction)
-                ),
-                apparent_temperature=_interpolate_optional(
-                    left.apparent_temperature, right.apparent_temperature, fraction
-                ),
-                humidity=_optional_int(
-                    round(_interpolate_optional(left.humidity, right.humidity, fraction))
-                    if left.humidity is not None or right.humidity is not None
-                    else None
-                ),
-                precipitation=nearest.precipitation,
-                precipitation_probability=_optional_int(
-                    round(
-                        _interpolate_optional(
-                            left.precipitation_probability,
-                            right.precipitation_probability,
-                            fraction,
-                        )
+        return WeatherPoint(
+            valid_at=target,
+            temperature=_interpolate_optional(left.temperature, right.temperature, fraction),
+            apparent_temperature=_interpolate_optional(
+                left.apparent_temperature, right.apparent_temperature, fraction
+            ),
+            humidity=_optional_int(
+                round(_interpolate_optional(left.humidity, right.humidity, fraction))
+                if left.humidity is not None or right.humidity is not None
+                else None
+            ),
+            precipitation=nearest.precipitation,
+            precipitation_probability=_optional_int(
+                round(
+                    _interpolate_optional(
+                        left.precipitation_probability,
+                        right.precipitation_probability,
+                        fraction,
                     )
-                    if left.precipitation_probability is not None
-                    or right.precipitation_probability is not None
-                    else None
-                ),
-                weather_code=nearest.weather_code,
-                cloud_cover=_optional_int(
-                    round(_interpolate_optional(left.cloud_cover, right.cloud_cover, fraction))
-                    if left.cloud_cover is not None or right.cloud_cover is not None
-                    else None
-                ),
-                wind_speed=_interpolate_optional(left.wind_speed, right.wind_speed, fraction),
-                wind_gust=_interpolate_optional(left.wind_gust, right.wind_gust, fraction),
-                shortwave_radiation=_interpolate_optional(
-                    left.shortwave_radiation, right.shortwave_radiation, fraction
-                ),
-            )
+                )
+                if left.precipitation_probability is not None
+                or right.precipitation_probability is not None
+                else None
+            ),
+            weather_code=nearest.weather_code,
+            cloud_cover=_optional_int(
+                round(_interpolate_optional(left.cloud_cover, right.cloud_cover, fraction))
+                if left.cloud_cover is not None or right.cloud_cover is not None
+                else None
+            ),
+            wind_speed=_interpolate_optional(left.wind_speed, right.wind_speed, fraction),
+            wind_gust=_interpolate_optional(left.wind_gust, right.wind_gust, fraction),
+            shortwave_radiation=_interpolate_optional(
+                left.shortwave_radiation, right.shortwave_radiation, fraction
+            ),
         )
-    return ModelForecast(forecast.model, tuple(points))
+
+    targets = [retrieved] + [first_hour + timedelta(hours=index) for index in range(hours)]
+    return ModelForecast(forecast.model, tuple(interpolate(target) for target in targets))
 
 
 class OpenMeteoClient:

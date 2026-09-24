@@ -490,8 +490,6 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             for key in ("slope", "hybrid_by_model", "validated"):
                 values.pop(key, None)
         for values in snapshot.get("rooms", {}).values():
-            for key in ("slope", "validated"):
-                values.pop(key, None)
-        for key in ("models", "outdoor_now", "outdoor", "radiation"):
-            snapshot.pop(key, None)
+            values.pop("validated", None)
+        snapshot.pop("models", None)
         snapshot["compact"] = True
