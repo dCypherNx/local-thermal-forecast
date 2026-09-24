@@ -103,6 +103,8 @@ class CoordinatorData:
 
     issued_at: datetime
     external_temperatures: dict[str, float]
+    control_current: HybridForecastPoint | None
+    control_forecast: tuple[HybridForecastPoint, ...]
     external_current: dict[str, HybridForecastPoint]
     external_forecasts: dict[str, tuple[HybridForecastPoint, ...]]
     room_temperatures: dict[str, float]
@@ -115,6 +117,8 @@ class CoordinatorData:
         return {
             "issued_at": self.issued_at.isoformat(),
             "external_temperatures": self.external_temperatures,
+            "control_current": self.control_current.as_dict() if self.control_current else None,
+            "control_forecast": [point.as_dict() for point in self.control_forecast],
             "external_current": {
                 entity_id: point.as_dict() for entity_id, point in self.external_current.items()
             },
@@ -158,6 +162,8 @@ class CoordinatorData:
         return cls(
             issued_at=datetime.fromisoformat(data["issued_at"]),
             external_temperatures=data.get("external_temperatures", {}),
+            control_current=(HybridForecastPoint.from_dict(data["control_current"]) if data.get("control_current") else None),
+            control_forecast=tuple(HybridForecastPoint.from_dict(point) for point in data.get("control_forecast", [])),
             external_current=external_current,
             external_forecasts=external_forecasts,
             room_temperatures=data.get("room_temperatures", {}),
