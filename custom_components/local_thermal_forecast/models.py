@@ -168,8 +168,7 @@ class CoordinatorData:
                 else None
             ),
             control_forecast=tuple(
-                HybridForecastPoint.from_dict(point)
-                for point in data.get("control_forecast", [])
+                HybridForecastPoint.from_dict(point) for point in data.get("control_forecast", [])
             ),
             external_current=external_current,
             external_forecasts=external_forecasts,
