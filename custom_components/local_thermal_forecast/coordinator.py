@@ -28,7 +28,8 @@ from .observation import (
     nearest_temperature,
     temperature_slope,
 )
-from .open_meteo import OpenMeteoClient, OpenMeteoError
+from .open_meteo import resample_forecast
+from .provider import ForecastProvider, ForecastProviderError
 from .storage import ThermalStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self,
         hass: HomeAssistant,
         entry: ConfigEntry,
-        client: OpenMeteoClient,
+        client: ForecastProvider,
         storage: ThermalStore,
     ) -> None:
         interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES)
@@ -90,18 +91,25 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         try:
             bundle = await self.client.async_fetch(latitude, longitude)
-        except OpenMeteoError as err:
+        except ForecastProviderError as err:
             raise UpdateFailed(str(err)) from err
 
-        primary = next(iter(bundle.forecasts.values()))
+        forecasts = {
+            model: resample_forecast(forecast, bundle.retrieved_at)
+            for model, forecast in bundle.forecasts.items()
+        }
+        primary = next(iter(forecasts.values()))
         external_temperatures: dict[str, float] = {}
+        external_current: dict[str, HybridForecastPoint] = {}
         external_slopes: dict[str, float] = {}
         external_forecasts: dict[str, tuple[HybridForecastPoint, ...]] = {}
         external_candidates: dict[str, dict[str, list[float]]] = {}
         selected_models: dict[str, dict[int, str]] = {}
+        source_available: dict[str, bool] = {}
 
         for entity_id in self.external_sensors:
             observed = current_temperature(self.hass, [entity_id])
+            source_available[entity_id] = observed is not None
             if observed is None:
                 observed = primary.points[0].temperature
             slope = temperature_slope(recent_history, [entity_id])
@@ -109,7 +117,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             external_slopes[entity_id] = slope
 
             candidates: dict[str, list[float]] = {}
-            for model, forecast in bundle.forecasts.items():
+            for model, forecast in forecasts.items():
                 raw_now = forecast.points[0].temperature
                 candidates[model] = [
                     self.hybrid.predict_outdoor(
@@ -131,9 +139,9 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
             entity_models: dict[int, str] = {}
             points: list[HybridForecastPoint] = []
             for horizon in range(1, OUTDOOR_HOURS + 1):
-                selected = self.hybrid.select_model(entity_id, horizon, set(bundle.forecasts))
+                selected = self.hybrid.select_model(entity_id, horizon, set(forecasts))
                 entity_models[horizon] = selected
-                source = bundle.forecasts[selected].points[horizon]
+                source = forecasts[selected].points[horizon]
                 points.append(
                     HybridForecastPoint(
                         valid_at=source.valid_at,
@@ -152,6 +160,21 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 )
             selected_models[entity_id] = entity_models
             external_forecasts[entity_id] = tuple(points)
+            current_source = forecasts[entity_models[1]].points[0]
+            external_current[entity_id] = HybridForecastPoint(
+                valid_at=current_source.valid_at,
+                temperature=round(observed, 2),
+                raw_temperature=current_source.temperature,
+                model=entity_models[1],
+                apparent_temperature=current_source.apparent_temperature,
+                humidity=current_source.humidity,
+                precipitation=current_source.precipitation,
+                precipitation_probability=current_source.precipitation_probability,
+                weather_code=current_source.weather_code,
+                cloud_cover=current_source.cloud_cover,
+                wind_speed=current_source.wind_speed,
+                wind_gust=current_source.wind_gust,
+            )
 
         outdoor_now = median(external_temperatures.values())
         outdoor_series = [
@@ -168,6 +191,9 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
         room_prediction_arrays: dict[str, list[float]] = {}
         for entity_id in self.room_sensors:
             room_temperature = current_temperature(self.hass, [entity_id])
+            source_available[entity_id] = room_temperature is not None
+            if room_temperature is None:
+                room_temperature = self.data.room_temperatures.get(entity_id) if self.data else None
             if room_temperature is None:
                 continue
             room_temperatures[entity_id] = room_temperature
@@ -193,14 +219,16 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
         data = CoordinatorData(
             issued_at=bundle.retrieved_at,
             external_temperatures=external_temperatures,
+            external_current=external_current,
             external_forecasts=external_forecasts,
             room_temperatures=room_temperatures,
             room_forecasts=room_forecasts,
             selected_models=selected_models,
+            source_available=source_available,
         )
         self._append_snapshot(
             data,
-            bundle.forecasts,
+            forecasts,
             external_candidates,
             external_slopes,
             room_slopes,
@@ -236,24 +264,25 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 "gateway": "open_meteo",
                 "issued_at": data.issued_at.isoformat(),
                 "valid_at": valid_at,
+                "models": {
+                    model: {
+                        "provider_run_at": None,
+                        "raw_now": forecast.points[0].temperature,
+                        "raw": [
+                            forecast.points[horizon].temperature
+                            for horizon in range(1, OUTDOOR_HOURS + 1)
+                        ],
+                    }
+                    for model, forecast in forecasts.items()
+                },
                 "external": {
                     entity_id: {
                         "base": data.external_temperatures[entity_id],
                         "slope": external_slopes[entity_id],
-                        "models": {
-                            model: {
-                                "provider_run_at": None,
-                                "raw_now": forecast.points[0].temperature,
-                                "raw": [
-                                    forecast.points[horizon].temperature
-                                    for horizon in range(1, OUTDOOR_HOURS + 1)
-                                ],
-                                "hybrid": external_candidates[entity_id][model],
-                                "raw_error": [None] * OUTDOOR_HOURS,
-                                "hybrid_error": [None] * OUTDOOR_HOURS,
-                            }
-                            for model, forecast in forecasts.items()
-                        },
+                        "source_available": data.source_available[entity_id],
+                        "hybrid_by_model": external_candidates[entity_id],
+                        "raw_error": {model: [None] * OUTDOOR_HOURS for model in forecasts},
+                        "hybrid_error": {model: [None] * OUTDOOR_HOURS for model in forecasts},
                         "selected": [
                             data.selected_models[entity_id][horizon]
                             for horizon in range(1, OUTDOOR_HOURS + 1)
@@ -273,6 +302,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     entity_id: {
                         "base": data.room_temperatures[entity_id],
                         "slope": room_slopes[entity_id],
+                        "source_available": data.source_available[entity_id],
                         "hybrid": predictions,
                         "observed": [None] * ROOM_HOURS,
                         "error": [None] * ROOM_HOURS,
@@ -291,6 +321,8 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
         """Match every issued per-sensor forecast to Recorder observations."""
         pending_targets: list[datetime] = []
         for snapshot in self.storage.snapshots:
+            if snapshot.get("compact"):
+                continue
             for index, value in enumerate(snapshot["valid_at"]):
                 target = datetime.fromisoformat(value)
                 external_pending = any(
@@ -313,6 +345,8 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
         changed = False
 
         for snapshot in self.storage.snapshots:
+            if snapshot.get("compact"):
+                continue
             for index, value in enumerate(snapshot["valid_at"]):
                 target = datetime.fromisoformat(value)
                 if target > now - timedelta(minutes=5):
@@ -324,7 +358,7 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     observed = nearest_temperature(history, [entity_id], target, tolerance)
                     if observed is not None:
                         values["observed"][index] = observed
-                        for model, model_values in values["models"].items():
+                        for model, model_values in snapshot["models"].items():
                             features = self.hybrid.outdoor_features(
                                 model_values["raw_now"],
                                 model_values["raw"][index],
@@ -338,14 +372,14 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                                 features,
                                 values["base"],
                                 model_values["raw"][index],
-                                model_values["hybrid"][index],
+                                values["hybrid_by_model"][model][index],
                                 observed,
                             )
-                            model_values["raw_error"][index] = round(
+                            values["raw_error"][model][index] = round(
                                 model_values["raw"][index] - observed, 3
                             )
-                            model_values["hybrid_error"][index] = round(
-                                model_values["hybrid"][index] - observed, 3
+                            values["hybrid_error"][model][index] = round(
+                                values["hybrid_by_model"][model][index] - observed, 3
                             )
                     if observed is not None or now - target > timedelta(hours=2):
                         values["validated"][index] = True
@@ -379,5 +413,39 @@ class LocalThermalForecastCoordinator(DataUpdateCoordinator[CoordinatorData]):
                         values["validated"][index] = True
                         changed = True
 
+            if self._snapshot_fully_validated(snapshot):
+                self._compact_snapshot(snapshot)
+                changed = True
+
         self.storage.data["hybrid_state"] = self.hybrid.to_dict()
         return changed
+
+    @staticmethod
+    def _snapshot_fully_validated(snapshot: dict[str, Any]) -> bool:
+        return all(
+            all(values["validated"])
+            for group in ("external", "rooms")
+            for values in snapshot.get(group, {}).values()
+        )
+
+    @staticmethod
+    def _compact_snapshot(snapshot: dict[str, Any]) -> None:
+        """Discard learning-only duplication after a snapshot is fully verified."""
+        models = snapshot["models"]
+        for values in snapshot.get("external", {}).values():
+            selected = values["selected"]
+            values["raw"] = [models[model]["raw"][index] for index, model in enumerate(selected)]
+            values["raw_error"] = [
+                values["raw_error"][model][index] for index, model in enumerate(selected)
+            ]
+            values["hybrid_error"] = [
+                values["hybrid_error"][model][index] for index, model in enumerate(selected)
+            ]
+            for key in ("slope", "hybrid_by_model", "validated"):
+                values.pop(key, None)
+        for values in snapshot.get("rooms", {}).values():
+            for key in ("slope", "validated"):
+                values.pop(key, None)
+        for key in ("models", "outdoor_now", "outdoor", "radiation"):
+            snapshot.pop(key, None)
+        snapshot["compact"] = True

@@ -18,6 +18,7 @@ class CoordinatorDataTests(unittest.TestCase):
         original = models.CoordinatorData(
             issued_at=issued_at,
             external_temperatures={"sensor.front": 21.0, "sensor.back": 20.5},
+            external_current={"sensor.front": outdoor, "sensor.back": outdoor},
             external_forecasts={
                 "sensor.front": (outdoor,),
                 "sensor.back": (outdoor,),
@@ -27,6 +28,11 @@ class CoordinatorDataTests(unittest.TestCase):
             selected_models={
                 "sensor.front": {1: "ecmwf_ifs"},
                 "sensor.back": {1: "icon_global"},
+            },
+            source_available={
+                "sensor.front": True,
+                "sensor.back": True,
+                "sensor.room": True,
             },
         )
 

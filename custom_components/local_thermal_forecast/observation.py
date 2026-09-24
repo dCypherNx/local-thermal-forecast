@@ -86,17 +86,25 @@ def nearest_temperature(
     target: datetime,
     tolerance_seconds: float,
 ) -> float | None:
-    """Return a median observation nearest a target instant."""
+    """Return the last known observation at a target instant.
+
+    A state just after the target is only used when Recorder has no preceding
+    state. This avoids validating a forecast with information from the future.
+    """
     values: list[float] = []
     for entity_id in entity_ids:
         points = history.get(entity_id, [])
         if not points:
             continue
-        closest_time, closest_value = min(
-            points, key=lambda point: abs((point[0] - target).total_seconds())
+        preceding = [point for point in points if point[0] <= target]
+        selected_time, selected_value = (
+            max(preceding, key=lambda point: point[0])
+            if preceding
+            else min(points, key=lambda point: point[0])
         )
-        if abs((closest_time - target).total_seconds()) <= tolerance_seconds:
-            values.append(closest_value)
+        age = (target - selected_time).total_seconds()
+        if -300 <= age <= tolerance_seconds:
+            values.append(selected_value)
     return median(values) if values else None
 
 

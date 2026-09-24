@@ -19,19 +19,33 @@ radiation. There is no integration-defined limit on either sensor list.
   through Home Assistant's forecast API.
 - Forecast ledger, observations used for verification, learned parameters and metrics restored
   after restart.
-- Diagnostic sensors for model age, selected source, bias and MAE.
+- Compact validation metrics on each forecast entity, without diagnostic entity explosion.
 - Graceful fallback to raw weather data when local observations are unavailable.
 
 This is an experimental forecast. It must not be used as a safety system or as the sole source
 for severe-weather decisions.
 
+The product has four forecast types. This release implements the first two without pretending
+that the other two already exist:
+
+| Type | Horizon | Status in 0.3.0 |
+| --- | --- | --- |
+| External temperature at home | 24 hours | Implemented, one calibrated forecast per selected sensor |
+| Temperature of each room | 12 hours | Implemented, one independent thermal forecast per selected sensor |
+| House-to-office regional weather | 24 hours | Planned |
+| Arbitrary locations | 7 / 15 / 30 days | Planned with explicitly different confidence semantics by horizon |
+
 ## Provider assignment in this release
 
 | Purpose | Provider / model |
 | --- | --- |
-| Weather API gateway | Open-Meteo |
+| Weather API gateway for types 1 and 2 | Open-Meteo |
 | Each external sensor | Independent adaptive choice among ECMWF IFS HRES, Open-Meteo Best Match, DWD ICON Global and NCEP GFS Global, then locally calibrated |
 | Each internal sensor | Independent local thermal model driven by its history and the aggregate of the calibrated outdoor forecasts |
+| Regional type 3 | Open-Meteo baseline; a future São Paulo radar/nowcasting and alerts source will be a separate provider |
+| Arbitrary locations type 4, days 1–7 | Open-Meteo detailed forecast baseline |
+| Arbitrary locations type 4, days 8–15 | Future ensemble/probabilistic provider; not represented as deterministic daily precision |
+| Arbitrary locations type 4, days 16–30 | Future sub-seasonal/climatological provider; not represented as a conventional daily forecast |
 
 Provider identity is kept in every forecast snapshot, while the normalized forecast and hybrid
 model layers do not depend on Home Assistant entities. Regional house-to-office weather,
@@ -60,9 +74,15 @@ The setup flow asks for:
 - one or more outdoor temperature sensors;
 - optional room temperature sensors.
 
-The selectors accept any number of entities. Each selected entity creates one forecast entity;
+The selectors accept any number of entities. A source cannot be both external and internal.
+Each selected entity creates one forecast entity;
 forecast points are served by Home Assistant's forecast API and are not copied into sensor state
 attributes.
+
+`weather` is used because it is Home Assistant's only native entity with a forecast API. Indoor
+forecasts therefore use a neutral thermometer icon and intentionally do not invent a cloud/rain
+condition; their entity state can appear as `unknown`, while current temperature and the complete
+hourly forecast remain available through the standard weather attributes and forecast API.
 
 The integration stores forecast snapshots, the later observations and errors associated with
 those forecasts, and learned model parameters. General sensor history remains owned by Recorder.
@@ -72,7 +92,7 @@ Retention and update cadence are available under integration options.
 
 Open-Meteo is the API gateway. Every issued forecast retains the scientific model identifier.
 The integration does not silently replace the selected home model when the API is unavailable;
-it keeps the last valid forecast and reports its age.
+it keeps the last valid forecast and exposes its issue timestamp.
 
 ## Development
 

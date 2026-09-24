@@ -5,7 +5,8 @@
       "single_instance_allowed": "Somente uma residência pode ser configurada. Localizações adicionais serão suportadas separadamente."
     },
     "error": {
-      "external_sensor_required": "Selecione pelo menos um sensor de temperatura externa."
+      "external_sensor_required": "Selecione pelo menos um sensor de temperatura externa.",
+      "sensor_roles_overlap": "Um sensor de temperatura não pode ser externo e interno ao mesmo tempo."
     },
     "step": {
       "user": {
@@ -40,15 +41,6 @@
           "update_interval_minutes": "Intervalo de atualização (minutos)"
         }
       }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "forecast_age": {"name": "Idade do forecast"},
-      "forecast_bias": {"name": "Bias híbrido de {source} +{horizon}h"},
-      "forecast_mae": {"name": "MAE híbrido de {source} +{horizon}h"},
-      "model_quality": {"name": "Qualidade do modelo de {source}"},
-      "selected_model": {"name": "Modelo meteorológico de {source}"}
     }
   }
 }

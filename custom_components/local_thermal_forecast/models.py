@@ -103,16 +103,21 @@ class CoordinatorData:
 
     issued_at: datetime
     external_temperatures: dict[str, float]
+    external_current: dict[str, HybridForecastPoint]
     external_forecasts: dict[str, tuple[HybridForecastPoint, ...]]
     room_temperatures: dict[str, float]
     room_forecasts: dict[str, tuple[RoomForecastPoint, ...]]
     selected_models: dict[str, dict[int, str]]
+    source_available: dict[str, bool]
 
     def as_dict(self) -> dict[str, Any]:
         """Return data suitable for Store."""
         return {
             "issued_at": self.issued_at.isoformat(),
             "external_temperatures": self.external_temperatures,
+            "external_current": {
+                entity_id: point.as_dict() for entity_id, point in self.external_current.items()
+            },
             "external_forecasts": {
                 entity_id: [point.as_dict() for point in points]
                 for entity_id, points in self.external_forecasts.items()
@@ -126,18 +131,35 @@ class CoordinatorData:
                 entity_id: {str(horizon): model for horizon, model in horizons.items()}
                 for entity_id, horizons in self.selected_models.items()
             },
+            "source_available": self.source_available,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CoordinatorData:
         """Restore coordinator data from Store."""
+        external_forecasts = {
+            entity_id: tuple(HybridForecastPoint.from_dict(point) for point in points)
+            for entity_id, points in data.get("external_forecasts", {}).items()
+        }
+        external_current = {
+            entity_id: HybridForecastPoint.from_dict(point)
+            for entity_id, point in data.get("external_current", {}).items()
+        }
+        for entity_id, points in external_forecasts.items():
+            if entity_id not in external_current and points:
+                external_current[entity_id] = points[0]
+        source_available = data.get("source_available") or {
+            entity_id: True
+            for entity_id in {
+                *external_forecasts,
+                *data.get("room_forecasts", {}),
+            }
+        }
         return cls(
             issued_at=datetime.fromisoformat(data["issued_at"]),
             external_temperatures=data.get("external_temperatures", {}),
-            external_forecasts={
-                entity_id: tuple(HybridForecastPoint.from_dict(point) for point in points)
-                for entity_id, points in data.get("external_forecasts", {}).items()
-            },
+            external_current=external_current,
+            external_forecasts=external_forecasts,
             room_temperatures=data.get("room_temperatures", {}),
             room_forecasts={
                 entity_id: tuple(RoomForecastPoint.from_dict(point) for point in points)
@@ -147,4 +169,5 @@ class CoordinatorData:
                 entity_id: {int(horizon): model for horizon, model in horizons.items()}
                 for entity_id, horizons in data.get("selected_models", {}).items()
             },
+            source_available=source_available,
         )

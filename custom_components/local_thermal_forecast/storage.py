@@ -20,7 +20,7 @@ class ThermalStore:
         )
         self._retention_days = retention_days
         self.data: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "snapshots": [],
             "hybrid_state": {},
             "last_data": None,
@@ -32,7 +32,7 @@ class ThermalStore:
         if loaded and loaded.get("schema_version", 1) < 2:
             old_rooms = loaded.get("hybrid_state", {}).get("rooms", {})
             self.data = {
-                "schema_version": 2,
+                "schema_version": 3,
                 "snapshots": [],
                 "hybrid_state": {
                     "outdoor": {},
@@ -41,6 +41,11 @@ class ThermalStore:
                 },
                 "last_data": None,
             }
+            await self._store.async_save(self.data)
+        elif loaded and loaded.get("schema_version", 1) < 3:
+            self.data.update(loaded)
+            self.data["schema_version"] = 3
+            self.data["snapshots"] = []
             await self._store.async_save(self.data)
         elif loaded:
             self.data.update(loaded)

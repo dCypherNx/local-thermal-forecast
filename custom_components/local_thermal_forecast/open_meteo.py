@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from aiohttp import ClientError, ClientSession
 
 from .const import MODEL_IDS, OUTDOOR_HOURS
 from .models import ForecastBundle, ModelForecast, WeatherPoint
+from .provider import ForecastProviderError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ HOURLY_FIELDS = (
 )
 
 
-class OpenMeteoError(Exception):
+class OpenMeteoError(ForecastProviderError):
     """Raised when Open-Meteo cannot supply a usable forecast."""
 
 
@@ -86,8 +87,8 @@ def normalize_response(
                     ),
                 )
             )
-        if len(points) >= OUTDOOR_HOURS + 1:
-            forecasts[model] = ModelForecast(model, tuple(points[: OUTDOOR_HOURS + 1]))
+        if len(points) >= OUTDOOR_HOURS + 2:
+            forecasts[model] = ModelForecast(model, tuple(points[: OUTDOOR_HOURS + 2]))
 
     if not forecasts:
         raise OpenMeteoError("No configured model returned a complete 24-hour forecast")
@@ -112,6 +113,80 @@ def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
 
 
+def _interpolate_optional(
+    first: float | int | None, second: float | int | None, fraction: float
+) -> float | None:
+    if first is None and second is None:
+        return None
+    if first is None:
+        return float(second)  # type: ignore[arg-type]
+    if second is None:
+        return float(first)
+    return float(first) + (float(second) - float(first)) * fraction
+
+
+def resample_forecast(
+    forecast: ModelForecast, retrieved_at: datetime, hours: int = OUTDOOR_HOURS
+) -> ModelForecast:
+    """Interpolate hourly provider data to exact lead times from retrieval."""
+    start = retrieved_at.astimezone(UTC).replace(second=0, microsecond=0)
+    source = forecast.points
+    points: list[WeatherPoint] = []
+    for horizon in range(hours + 1):
+        target = start + timedelta(hours=horizon)
+        right_index = next(
+            (index for index, point in enumerate(source) if point.valid_at >= target),
+            len(source) - 1,
+        )
+        left_index = max(0, right_index - 1)
+        left = source[left_index]
+        right = source[right_index]
+        span = (right.valid_at - left.valid_at).total_seconds()
+        fraction = 0.0 if span <= 0 else (target - left.valid_at).total_seconds() / span
+        nearest = left if fraction < 0.5 else right
+        points.append(
+            WeatherPoint(
+                valid_at=target,
+                temperature=float(
+                    _interpolate_optional(left.temperature, right.temperature, fraction)
+                ),
+                apparent_temperature=_interpolate_optional(
+                    left.apparent_temperature, right.apparent_temperature, fraction
+                ),
+                humidity=_optional_int(
+                    round(_interpolate_optional(left.humidity, right.humidity, fraction))
+                    if left.humidity is not None or right.humidity is not None
+                    else None
+                ),
+                precipitation=nearest.precipitation,
+                precipitation_probability=_optional_int(
+                    round(
+                        _interpolate_optional(
+                            left.precipitation_probability,
+                            right.precipitation_probability,
+                            fraction,
+                        )
+                    )
+                    if left.precipitation_probability is not None
+                    or right.precipitation_probability is not None
+                    else None
+                ),
+                weather_code=nearest.weather_code,
+                cloud_cover=_optional_int(
+                    round(_interpolate_optional(left.cloud_cover, right.cloud_cover, fraction))
+                    if left.cloud_cover is not None or right.cloud_cover is not None
+                    else None
+                ),
+                wind_speed=_interpolate_optional(left.wind_speed, right.wind_speed, fraction),
+                wind_gust=_interpolate_optional(left.wind_gust, right.wind_gust, fraction),
+                shortwave_radiation=_interpolate_optional(
+                    left.shortwave_radiation, right.shortwave_radiation, fraction
+                ),
+            )
+        )
+    return ModelForecast(forecast.model, tuple(points))
+
+
 class OpenMeteoClient:
     """Fetch multi-model weather data from Open-Meteo."""
 
@@ -125,7 +200,7 @@ class OpenMeteoClient:
             "longitude": str(longitude),
             "models": ",".join(MODEL_IDS),
             "hourly": ",".join(HOURLY_FIELDS),
-            "forecast_hours": str(OUTDOOR_HOURS + 1),
+            "forecast_hours": str(OUTDOOR_HOURS + 2),
             "timezone": "UTC",
             "temperature_unit": "celsius",
             "wind_speed_unit": "kmh",

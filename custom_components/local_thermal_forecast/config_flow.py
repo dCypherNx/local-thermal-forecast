@@ -68,6 +68,14 @@ def _config_schema(defaults: dict[str, Any]) -> vol.Schema:
     )
 
 
+def _sensor_errors(user_input: dict[str, Any]) -> dict[str, str]:
+    if not user_input[CONF_EXTERNAL_SENSORS]:
+        return {CONF_EXTERNAL_SENSORS: "external_sensor_required"}
+    if set(user_input[CONF_EXTERNAL_SENSORS]) & set(user_input.get(CONF_ROOM_SENSORS, [])):
+        return {"base": "sensor_roles_overlap"}
+    return {}
+
+
 class LocalThermalForecastConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle setup and reconfiguration."""
 
@@ -79,9 +87,8 @@ class LocalThermalForecastConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="single_instance_allowed")
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input[CONF_EXTERNAL_SENSORS]:
-                errors[CONF_EXTERNAL_SENSORS] = "external_sensor_required"
-            else:
+            errors = _sensor_errors(user_input)
+            if not errors:
                 await self.async_set_unique_id("home")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
@@ -101,9 +108,8 @@ class LocalThermalForecastConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input[CONF_EXTERNAL_SENSORS]:
-                errors[CONF_EXTERNAL_SENSORS] = "external_sensor_required"
-            else:
+            errors = _sensor_errors(user_input)
+            if not errors:
                 await self.async_set_unique_id("home")
                 self._abort_if_unique_id_mismatch()
                 return self.async_update_and_abort(

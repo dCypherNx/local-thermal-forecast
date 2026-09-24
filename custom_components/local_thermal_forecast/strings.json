@@ -5,7 +5,8 @@
       "single_instance_allowed": "Only one home can be configured. Additional locations will be supported separately."
     },
     "error": {
-      "external_sensor_required": "Select at least one outdoor temperature sensor."
+      "external_sensor_required": "Select at least one outdoor temperature sensor.",
+      "sensor_roles_overlap": "A temperature sensor cannot be both external and internal."
     },
     "step": {
       "user": {
@@ -40,15 +41,6 @@
           "update_interval_minutes": "Update interval (minutes)"
         }
       }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "forecast_age": {"name": "Forecast age"},
-      "forecast_bias": {"name": "{source} hybrid bias +{horizon}h"},
-      "forecast_mae": {"name": "{source} hybrid MAE +{horizon}h"},
-      "model_quality": {"name": "{source} model quality"},
-      "selected_model": {"name": "{source} selected weather model"}
     }
   }
 }

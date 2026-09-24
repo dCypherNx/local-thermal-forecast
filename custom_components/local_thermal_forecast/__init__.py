@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -20,8 +20,7 @@ from .coordinator import LocalThermalForecastCoordinator
 from .open_meteo import OpenMeteoClient
 from .storage import ThermalStore
 
-_LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.WEATHER, Platform.SENSOR]
+PLATFORMS = [Platform.WEATHER]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -51,6 +50,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.runtime_data = IntegrationRuntime(coordinator, storage)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
+    registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if registry_entry.platform == DOMAIN and registry_entry.entity_id.startswith("sensor."):
+            registry.async_remove(registry_entry.entity_id)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_create_background_task(

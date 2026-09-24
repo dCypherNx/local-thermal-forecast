@@ -16,14 +16,21 @@ class HybridSystemTests(unittest.TestCase):
         self.assertAlmostEqual(
             system.predict_outdoor("sensor.garden", "ecmwf_ifs", 2, 20.0, features), 23.4
         )
+        self.assertEqual(system.outdoor, {})
+
+    def test_cold_start_room_prediction_does_not_allocate_training_state(self) -> None:
+        system = hybrid.HybridSystem()
+        features = system.room_features(20.0, 24.0, 0.1, 300.0, 3)
+        system.predict_room("sensor.room", 3, 22.0, features)
+        self.assertEqual(system.rooms, {})
 
     def test_better_model_becomes_champion_after_minimum_sample(self) -> None:
         system = hybrid.HybridSystem()
         features = system.outdoor_features(20.0, 21.0, 0.0, 1)
         for _ in range(hybrid.MIN_SELECTION_SAMPLES):
-            system.update_outdoor("sensor.garden", "ecmwf_ifs", 1, features, 20.0, 24.0, 21.0, 21.0)
+            system.update_outdoor("sensor.garden", "ecmwf_ifs", 1, features, 20.0, 24.0, 24.0, 21.0)
             system.update_outdoor(
-                "sensor.garden", "icon_global", 1, features, 20.0, 21.1, 21.0, 21.0
+                "sensor.garden", "icon_global", 1, features, 20.0, 21.1, 21.1, 21.0
             )
         selected = system.select_model("sensor.garden", 1, {"ecmwf_ifs", "icon_global"})
         self.assertEqual(selected, "icon_global")

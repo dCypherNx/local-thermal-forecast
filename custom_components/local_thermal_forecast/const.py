@@ -6,8 +6,6 @@ from datetime import timedelta
 from typing import Final
 
 DOMAIN: Final = "local_thermal_forecast"
-PLATFORMS: Final = ["weather", "sensor"]
-
 CONF_EXTERNAL_SENSORS: Final = "external_sensors"
 CONF_ROOM_SENSORS: Final = "room_sensors"
 CONF_RETENTION_DAYS: Final = "retention_days"
@@ -21,7 +19,7 @@ MAX_UPDATE_INTERVAL_MINUTES: Final = 360
 
 OUTDOOR_HOURS: Final = 24
 ROOM_HOURS: Final = 12
-HISTORY_TOLERANCE: Final = timedelta(minutes=45)
+HISTORY_TOLERANCE: Final = timedelta(hours=2)
 
 PRIMARY_MODEL: Final = "ecmwf_ifs"
 MODEL_IDS: Final = (

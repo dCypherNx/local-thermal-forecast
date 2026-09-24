@@ -112,6 +112,8 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         self.role = role
         self._attr_unique_id = f"{entry.entry_id}_{role}_{stable_source_id}"
         self._attr_name = f"Previsão {source_name}"
+        if role == "internal":
+            self._attr_icon = "mdi:thermometer-lines"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
@@ -143,15 +145,17 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
 
     @property
     def condition(self) -> str | None:
-        if self.role != "external" or not self._points:
+        if self.role != "external" or self.coordinator.data is None:
             return None
-        return WMO_CONDITIONS.get(self._points[0].weather_code)
+        current = self.coordinator.data.external_current.get(self.source_entity_id)
+        return WMO_CONDITIONS.get(current.weather_code) if current else None
 
     @property
     def humidity(self) -> float | None:
-        if self.role != "external" or not self._points:
+        if self.role != "external" or self.coordinator.data is None:
             return None
-        return self._points[0].humidity
+        current = self.coordinator.data.external_current.get(self.source_entity_id)
+        return current.humidity if current else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -162,13 +166,36 @@ class SensorThermalForecast(CoordinatorEntity[LocalThermalForecastCoordinator], 
         }
         if self.coordinator.data is not None:
             attributes["issued_at"] = self.coordinator.data.issued_at.isoformat()
+            attributes["source_available"] = self.coordinator.data.source_available.get(
+                self.source_entity_id, False
+            )
         if self.role == "external" and self.coordinator.data is not None:
             models = self.coordinator.data.selected_models.get(self.source_entity_id, {})
             attributes["selected_models"] = {
                 f"plus_{horizon}h": MODEL_NAMES.get(models.get(horizon), models.get(horizon))
                 for horizon in (1, 6, 12, 24)
             }
+            attributes["validation"] = {
+                f"plus_{horizon}h": self._rounded_metrics(
+                    self.coordinator.hybrid.metrics(self.source_entity_id, horizon)
+                )
+                for horizon in (1, 6, 12, 24)
+            }
+        elif self.coordinator.data is not None:
+            attributes["validation"] = {
+                f"plus_{horizon}h": self._rounded_metrics(
+                    self.coordinator.hybrid.room_metrics(self.source_entity_id, horizon)
+                )
+                for horizon in (1, 3, 6, 12)
+            }
         return attributes
+
+    @staticmethod
+    def _rounded_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: round(value, 3) if isinstance(value, float) else value
+            for key, value in metrics.items()
+        }
 
     async def async_forecast_hourly(self) -> list[Forecast] | None:
         """Return the source-specific series through Home Assistant's forecast API."""

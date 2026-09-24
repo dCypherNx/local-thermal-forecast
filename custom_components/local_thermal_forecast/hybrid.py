@@ -190,9 +190,13 @@ class HybridSystem:
         local_temperature: float,
         features: list[float],
     ) -> float:
-        return local_temperature + self._outdoor_model(
-            entity_id, model, horizon
-        ).regression.predict(features)
+        state = self.outdoor.get(entity_id, {}).get(model, {}).get(horizon)
+        correction = (
+            state.regression.predict(features)
+            if state is not None
+            else RecursiveLeastSquares.create([0.0, 1.0, 1.0]).predict(features)
+        )
+        return local_temperature + correction
 
     def predict_room(
         self,
@@ -201,7 +205,13 @@ class HybridSystem:
         room_temperature: float,
         features: list[float],
     ) -> float:
-        return room_temperature + self._room_model(entity_id, horizon).regression.predict(features)
+        state = self.rooms.get(entity_id, {}).get(horizon)
+        correction = (
+            state.regression.predict(features)
+            if state is not None
+            else RecursiveLeastSquares.create([0.0, 0.20, 1.0, 0.0]).predict(features)
+        )
+        return room_temperature + correction
 
     def update_outdoor(
         self,
@@ -242,10 +252,10 @@ class HybridSystem:
             state = self.outdoor.get(entity_id, {}).get(model, {}).get(horizon)
             if (
                 state is not None
-                and state.raw_metrics.count >= MIN_SELECTION_SAMPLES
-                and state.raw_metrics.ewma_mae is not None
+                and state.hybrid_metrics.count >= MIN_SELECTION_SAMPLES
+                and state.hybrid_metrics.ewma_mae is not None
             ):
-                eligible[model] = state.raw_metrics.ewma_mae
+                eligible[model] = state.hybrid_metrics.ewma_mae
         if not eligible:
             self.champions.setdefault(entity_id, {})[horizon] = fallback
             return fallback
@@ -273,18 +283,46 @@ class HybridSystem:
             "raw_mae": state.raw_metrics.mae,
         }
 
+    def room_metrics(self, entity_id: str, horizon: int) -> dict[str, Any]:
+        """Return validation metrics for one indoor sensor and horizon."""
+        state = self.rooms.get(entity_id, {}).get(horizon)
+        if state is None:
+            return {"count": 0, "bias": None, "mae": None, "rmse": None}
+        metrics = state.hybrid_metrics
+        return {
+            "count": metrics.count,
+            "bias": metrics.bias,
+            "mae": metrics.mae,
+            "rmse": metrics.rmse,
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "outdoor": {
                 entity_id: {
-                    model: {str(horizon): state.to_dict() for horizon, state in horizons.items()}
+                    model: {
+                        str(horizon): state.to_dict()
+                        for horizon, state in horizons.items()
+                        if state.regression.count > 0
+                    }
                     for model, horizons in models.items()
+                    if any(state.regression.count > 0 for state in horizons.values())
                 }
                 for entity_id, models in self.outdoor.items()
+                if any(
+                    state.regression.count > 0
+                    for horizons in models.values()
+                    for state in horizons.values()
+                )
             },
             "rooms": {
-                entity_id: {str(horizon): state.to_dict() for horizon, state in horizons.items()}
+                entity_id: {
+                    str(horizon): state.to_dict()
+                    for horizon, state in horizons.items()
+                    if state.regression.count > 0
+                }
                 for entity_id, horizons in self.rooms.items()
+                if any(state.regression.count > 0 for state in horizons.values())
             },
             "champions": {
                 entity_id: {str(horizon): model for horizon, model in horizons.items()}
