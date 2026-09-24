@@ -8,13 +8,14 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession
 
-from .const import MODEL_IDS, OUTDOOR_HOURS
+from .const import MODEL_IDS, OUTDOOR_HOURS, PRIMARY_MODEL
 from .models import ForecastBundle, ModelForecast, WeatherPoint
 from .provider import ForecastProviderError
 
 _LOGGER = logging.getLogger(__name__)
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
+ECMWF_API_URL = "https://api.open-meteo.com/v1/ecmwf"
 HOURLY_FIELDS = (
     "temperature_2m",
     "apparent_temperature",
@@ -193,6 +194,38 @@ class OpenMeteoClient:
     def __init__(self, session: ClientSession) -> None:
         self._session = session
 
+
+    async def _async_fetch_ecmwf(
+        self, latitude: float, longitude: float, retrieved_at: datetime
+    ) -> ModelForecast | None:
+        """Fetch the raw ECMWF control independently from the multi-model gateway."""
+        params = {
+            "latitude": str(latitude),
+            "longitude": str(longitude),
+            "hourly": ",".join(HOURLY_FIELDS),
+            "forecast_hours": str(OUTDOOR_HOURS + 2),
+            "timezone": "UTC",
+            "temperature_unit": "celsius",
+            "wind_speed_unit": "kmh",
+            "precipitation_unit": "mm",
+        }
+        try:
+            async with self._session.get(ECMWF_API_URL, params=params, timeout=30) as response:
+                if response.status != 200:
+                    _LOGGER.warning("ECMWF control returned HTTP %s", response.status)
+                    return None
+                payload = await response.json()
+            bundle = normalize_response(
+                payload,
+                requested_latitude=latitude,
+                requested_longitude=longitude,
+                retrieved_at=retrieved_at,
+            )
+            return bundle.forecasts.get(PRIMARY_MODEL)
+        except (TimeoutError, ClientError, OpenMeteoError) as err:
+            _LOGGER.warning("ECMWF control fetch failed: %s", err)
+            return None
+
     async def async_fetch(self, latitude: float, longitude: float) -> ForecastBundle:
         """Fetch and normalize the candidate model forecasts."""
         params = {
@@ -216,9 +249,14 @@ class OpenMeteoClient:
         except (TimeoutError, ClientError) as err:
             raise OpenMeteoError(f"Open-Meteo request failed: {err}") from err
 
-        return normalize_response(
+        bundle = normalize_response(
             payload,
             requested_latitude=latitude,
             requested_longitude=longitude,
             retrieved_at=retrieved_at,
         )
+        if PRIMARY_MODEL not in bundle.forecasts:
+            ecmwf = await self._async_fetch_ecmwf(latitude, longitude, retrieved_at)
+            if ecmwf is not None:
+                bundle.forecasts[PRIMARY_MODEL] = ecmwf
+        return bundle
