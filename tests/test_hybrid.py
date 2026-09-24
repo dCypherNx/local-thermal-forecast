@@ -13,26 +13,38 @@ class HybridSystemTests(unittest.TestCase):
     def test_cold_start_anchors_weather_change_to_local_sensor(self) -> None:
         system = hybrid.HybridSystem()
         features = system.outdoor_features(15.0, 18.0, 0.2, 2)
-        self.assertAlmostEqual(system.predict_outdoor("ecmwf_ifs", 2, 20.0, features), 23.4)
+        self.assertAlmostEqual(
+            system.predict_outdoor("sensor.garden", "ecmwf_ifs", 2, 20.0, features), 23.4
+        )
 
     def test_better_model_becomes_champion_after_minimum_sample(self) -> None:
         system = hybrid.HybridSystem()
         features = system.outdoor_features(20.0, 21.0, 0.0, 1)
         for _ in range(hybrid.MIN_SELECTION_SAMPLES):
-            system.update_outdoor("ecmwf_ifs", 1, features, 20.0, 24.0, 21.0, 21.0)
-            system.update_outdoor("icon_global", 1, features, 20.0, 21.1, 21.0, 21.0)
-        selected = system.select_model(1, {"ecmwf_ifs", "icon_global"})
+            system.update_outdoor("sensor.garden", "ecmwf_ifs", 1, features, 20.0, 24.0, 21.0, 21.0)
+            system.update_outdoor(
+                "sensor.garden", "icon_global", 1, features, 20.0, 21.1, 21.0, 21.0
+            )
+        selected = system.select_model("sensor.garden", 1, {"ecmwf_ifs", "icon_global"})
         self.assertEqual(selected, "icon_global")
 
     def test_state_round_trip_preserves_metrics_and_champion(self) -> None:
         system = hybrid.HybridSystem()
         features = system.outdoor_features(20.0, 22.0, 0.0, 6)
-        system.update_outdoor("ecmwf_ifs", 6, features, 20.0, 22.0, 21.5, 21.0)
-        system.champions[6] = "ecmwf_ifs"
+        system.update_outdoor("sensor.garden", "ecmwf_ifs", 6, features, 20.0, 22.0, 21.5, 21.0)
+        system.champions["sensor.garden"] = {6: "ecmwf_ifs"}
         restored = hybrid.HybridSystem.from_dict(system.to_dict())
-        self.assertEqual(restored.champions[6], "ecmwf_ifs")
-        self.assertEqual(restored.metrics(6)["count"], 1)
-        self.assertAlmostEqual(restored.metrics(6)["mae"], 0.5)
+        self.assertEqual(restored.champions["sensor.garden"][6], "ecmwf_ifs")
+        self.assertEqual(restored.metrics("sensor.garden", 6)["count"], 1)
+        self.assertAlmostEqual(restored.metrics("sensor.garden", 6)["mae"], 0.5)
+
+    def test_outdoor_sensor_models_are_independent(self) -> None:
+        system = hybrid.HybridSystem()
+        features = system.outdoor_features(20.0, 22.0, 0.0, 1)
+        before_b = system.predict_outdoor("sensor.backyard", "ecmwf_ifs", 1, 20.0, features)
+        system.update_outdoor("sensor.front", "ecmwf_ifs", 1, features, 20.0, 22.0, 22.0, 25.0)
+        after_b = system.predict_outdoor("sensor.backyard", "ecmwf_ifs", 1, 20.0, features)
+        self.assertEqual(after_b, before_b)
 
     def test_room_models_are_independent(self) -> None:
         system = hybrid.HybridSystem()

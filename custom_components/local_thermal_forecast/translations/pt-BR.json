@@ -10,7 +10,7 @@
     "step": {
       "user": {
         "title": "Configurar previsão térmica local",
-        "description": "Selecione os sensores externos usados para ancorar a previsão híbrida e, opcionalmente, os sensores dos quartos.",
+        "description": "Selecione qualquer quantidade de sensores de temperatura. Cada sensor selecionado cria sua própria entidade de previsão meteorológica.",
         "data": {
           "name": "Nome",
           "latitude": "Latitude",
@@ -45,16 +45,10 @@
   "entity": {
     "sensor": {
       "forecast_age": {"name": "Idade do forecast"},
-      "forecast_bias": {"name": "Bias híbrido +{horizon}h"},
-      "forecast_mae": {"name": "MAE híbrido +{horizon}h"},
-      "model_quality": {"name": "Qualidade do modelo"},
-      "selected_model": {"name": "Modelo meteorológico selecionado"}
-    }
-  },
-  "services": {
-    "get_room_forecast": {
-      "name": "Obter previsão do quarto",
-      "description": "Retorna a previsão completa de 12 horas de um quarto configurado."
+      "forecast_bias": {"name": "Bias híbrido de {source} +{horizon}h"},
+      "forecast_mae": {"name": "MAE híbrido de {source} +{horizon}h"},
+      "model_quality": {"name": "Qualidade do modelo de {source}"},
+      "selected_model": {"name": "Modelo meteorológico de {source}"}
     }
   }
 }

@@ -37,8 +37,5 @@ MODEL_NAMES: Final = {
     "ncep_gfs_global": "NCEP GFS Global",
 }
 
-SERVICE_GET_ROOM_FORECAST: Final = "get_room_forecast"
-ATTR_ROOM_ENTITY_ID: Final = "room_entity_id"
-
 STORAGE_VERSION: Final = 1
 STORAGE_KEY_PREFIX: Final = f"{DOMAIN}.entry"

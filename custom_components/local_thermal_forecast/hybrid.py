@@ -141,14 +141,18 @@ class HybridSystem:
     """Outdoor model comparison and independent room models."""
 
     def __init__(self) -> None:
-        self.outdoor: dict[str, dict[int, HorizonModel]] = {}
+        self.outdoor: dict[str, dict[str, dict[int, HorizonModel]]] = {}
         self.rooms: dict[str, dict[int, HorizonModel]] = {}
-        self.champions: dict[int, str] = {}
+        self.champions: dict[str, dict[int, str]] = {}
 
-    def _outdoor_model(self, model: str, horizon: int) -> HorizonModel:
-        return self.outdoor.setdefault(model, {}).setdefault(
-            horizon,
-            HorizonModel(RecursiveLeastSquares.create([0.0, 1.0, 1.0])),
+    def _outdoor_model(self, entity_id: str, model: str, horizon: int) -> HorizonModel:
+        return (
+            self.outdoor.setdefault(entity_id, {})
+            .setdefault(model, {})
+            .setdefault(
+                horizon,
+                HorizonModel(RecursiveLeastSquares.create([0.0, 1.0, 1.0])),
+            )
         )
 
     def _room_model(self, entity_id: str, horizon: int) -> HorizonModel:
@@ -180,12 +184,15 @@ class HybridSystem:
 
     def predict_outdoor(
         self,
+        entity_id: str,
         model: str,
         horizon: int,
         local_temperature: float,
         features: list[float],
     ) -> float:
-        return local_temperature + self._outdoor_model(model, horizon).regression.predict(features)
+        return local_temperature + self._outdoor_model(
+            entity_id, model, horizon
+        ).regression.predict(features)
 
     def predict_room(
         self,
@@ -198,6 +205,7 @@ class HybridSystem:
 
     def update_outdoor(
         self,
+        entity_id: str,
         model: str,
         horizon: int,
         features: list[float],
@@ -206,7 +214,7 @@ class HybridSystem:
         predicted_temperature: float,
         observed_temperature: float,
     ) -> None:
-        state = self._outdoor_model(model, horizon)
+        state = self._outdoor_model(entity_id, model, horizon)
         state.raw_metrics.update(raw_temperature - observed_temperature)
         state.hybrid_metrics.update(predicted_temperature - observed_temperature)
         state.regression.update(features, observed_temperature - local_temperature)
@@ -224,14 +232,14 @@ class HybridSystem:
         state.hybrid_metrics.update(predicted_temperature - observed_temperature)
         state.regression.update(features, observed_temperature - room_temperature)
 
-    def select_model(self, horizon: int, available: set[str]) -> str:
+    def select_model(self, entity_id: str, horizon: int, available: set[str]) -> str:
         """Select a proven model with hysteresis; otherwise use ECMWF."""
         if not available:
             raise ValueError("At least one weather model is required")
         fallback = PRIMARY_MODEL if PRIMARY_MODEL in available else sorted(available)[0]
         eligible: dict[str, float] = {}
         for model in available:
-            state = self.outdoor.get(model, {}).get(horizon)
+            state = self.outdoor.get(entity_id, {}).get(model, {}).get(horizon)
             if (
                 state is not None
                 and state.raw_metrics.count >= MIN_SELECTION_SAMPLES
@@ -239,20 +247,20 @@ class HybridSystem:
             ):
                 eligible[model] = state.raw_metrics.ewma_mae
         if not eligible:
-            self.champions[horizon] = fallback
+            self.champions.setdefault(entity_id, {})[horizon] = fallback
             return fallback
 
         best = min(eligible, key=eligible.get)  # type: ignore[arg-type]
-        current = self.champions.get(horizon, fallback)
+        current = self.champions.get(entity_id, {}).get(horizon, fallback)
         if current not in eligible or eligible[best] < eligible[current] * (1.0 - SWITCH_MARGIN):
             current = best
-        self.champions[horizon] = current
+        self.champions.setdefault(entity_id, {})[horizon] = current
         return current
 
-    def metrics(self, horizon: int) -> dict[str, Any]:
+    def metrics(self, entity_id: str, horizon: int) -> dict[str, Any]:
         """Return metrics for the selected model at a horizon."""
-        model = self.champions.get(horizon, PRIMARY_MODEL)
-        state = self.outdoor.get(model, {}).get(horizon)
+        model = self.champions.get(entity_id, {}).get(horizon, PRIMARY_MODEL)
+        state = self.outdoor.get(entity_id, {}).get(model, {}).get(horizon)
         if state is None:
             return {"model": model, "count": 0, "bias": None, "mae": None, "rmse": None}
         metrics = state.hybrid_metrics
@@ -268,14 +276,20 @@ class HybridSystem:
     def to_dict(self) -> dict[str, Any]:
         return {
             "outdoor": {
-                model: {str(horizon): state.to_dict() for horizon, state in horizons.items()}
-                for model, horizons in self.outdoor.items()
+                entity_id: {
+                    model: {str(horizon): state.to_dict() for horizon, state in horizons.items()}
+                    for model, horizons in models.items()
+                }
+                for entity_id, models in self.outdoor.items()
             },
             "rooms": {
                 entity_id: {str(horizon): state.to_dict() for horizon, state in horizons.items()}
                 for entity_id, horizons in self.rooms.items()
             },
-            "champions": {str(horizon): model for horizon, model in self.champions.items()},
+            "champions": {
+                entity_id: {str(horizon): model for horizon, model in horizons.items()}
+                for entity_id, horizons in self.champions.items()
+            },
         }
 
     @classmethod
@@ -284,10 +298,14 @@ class HybridSystem:
         if not data:
             return system
         system.outdoor = {
-            model: {
-                int(horizon): HorizonModel.from_dict(state) for horizon, state in horizons.items()
+            entity_id: {
+                model: {
+                    int(horizon): HorizonModel.from_dict(state)
+                    for horizon, state in horizons.items()
+                }
+                for model, horizons in models.items()
             }
-            for model, horizons in data.get("outdoor", {}).items()
+            for entity_id, models in data.get("outdoor", {}).items()
         }
         system.rooms = {
             entity_id: {
@@ -296,6 +314,7 @@ class HybridSystem:
             for entity_id, horizons in data.get("rooms", {}).items()
         }
         system.champions = {
-            int(horizon): model for horizon, model in data.get("champions", {}).items()
+            entity_id: {int(horizon): model for horizon, model in horizons.items()}
+            for entity_id, horizons in data.get("champions", {}).items()
         }
         return system

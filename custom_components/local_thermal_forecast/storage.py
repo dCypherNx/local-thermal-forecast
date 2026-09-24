@@ -20,6 +20,7 @@ class ThermalStore:
         )
         self._retention_days = retention_days
         self.data: dict[str, Any] = {
+            "schema_version": 2,
             "snapshots": [],
             "hybrid_state": {},
             "last_data": None,
@@ -28,7 +29,20 @@ class ThermalStore:
     async def async_load(self) -> dict[str, Any]:
         """Load persisted data."""
         loaded = await self._store.async_load()
-        if loaded:
+        if loaded and loaded.get("schema_version", 1) < 2:
+            old_rooms = loaded.get("hybrid_state", {}).get("rooms", {})
+            self.data = {
+                "schema_version": 2,
+                "snapshots": [],
+                "hybrid_state": {
+                    "outdoor": {},
+                    "rooms": old_rooms,
+                    "champions": {},
+                },
+                "last_data": None,
+            }
+            await self._store.async_save(self.data)
+        elif loaded:
             self.data.update(loaded)
         self.prune()
         return self.data

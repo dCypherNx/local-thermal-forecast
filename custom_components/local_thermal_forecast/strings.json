@@ -10,7 +10,7 @@
     "step": {
       "user": {
         "title": "Configure local thermal forecast",
-        "description": "Select the outdoor sensors used to anchor the hybrid forecast and, optionally, room sensors.",
+        "description": "Select any number of temperature sensors. Each selected sensor creates its own weather forecast entity.",
         "data": {
           "name": "Name",
           "latitude": "Latitude",
@@ -45,16 +45,10 @@
   "entity": {
     "sensor": {
       "forecast_age": {"name": "Forecast age"},
-      "forecast_bias": {"name": "Hybrid bias +{horizon}h"},
-      "forecast_mae": {"name": "Hybrid MAE +{horizon}h"},
-      "model_quality": {"name": "Model quality"},
-      "selected_model": {"name": "Selected weather model"}
-    }
-  },
-  "services": {
-    "get_room_forecast": {
-      "name": "Get room forecast",
-      "description": "Return the complete 12-hour forecast for one configured room."
+      "forecast_bias": {"name": "{source} hybrid bias +{horizon}h"},
+      "forecast_mae": {"name": "{source} hybrid MAE +{horizon}h"},
+      "model_quality": {"name": "{source} model quality"},
+      "selected_model": {"name": "{source} selected weather model"}
     }
   }
 }

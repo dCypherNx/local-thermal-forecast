@@ -29,7 +29,11 @@ async def async_get_config_entry_diagnostics(
         "snapshot_count": len(runtime.storage.snapshots),
         "configured_external_sensor_count": len(coordinator.external_sensors),
         "configured_room_count": len(coordinator.room_sensors),
-        "metrics": {
-            str(horizon): coordinator.hybrid.metrics(horizon) for horizon in (1, 6, 12, 24)
+        "external_metrics": {
+            f"source_{index}": {
+                str(horizon): coordinator.hybrid.metrics(entity_id, horizon)
+                for horizon in (1, 6, 12, 24)
+            }
+            for index, entity_id in enumerate(coordinator.external_sensors, start=1)
         },
     }

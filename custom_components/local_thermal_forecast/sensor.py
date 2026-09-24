@@ -1,4 +1,4 @@
-"""Diagnostic and room summary sensors."""
+"""Diagnostic sensors for each external forecast target."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import IntegrationRuntime
-from .const import MODEL_NAMES
+from .const import DOMAIN, MODEL_NAMES
 from .coordinator import LocalThermalForecastCoordinator
 
 
@@ -24,29 +24,45 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up diagnostic and per-room summary sensors."""
+    """Set up global and per-external-source diagnostics."""
     runtime: IntegrationRuntime = entry.runtime_data
-    entities: list[SensorEntity] = [
-        ForecastAgeSensor(runtime.coordinator, entry),
-        ModelQualitySensor(runtime.coordinator, entry),
-        SelectedModelSensor(runtime.coordinator, entry),
-        ErrorMetricSensor(runtime.coordinator, entry, "bias", 1),
-    ]
-    entities.extend(
-        ErrorMetricSensor(runtime.coordinator, entry, "mae", horizon) for horizon in (1, 6, 12, 24)
-    )
+    entities: list[SensorEntity] = [ForecastAgeSensor(runtime.coordinator, entry)]
     registry = er.async_get(hass)
-    for entity_id in runtime.coordinator.room_sensors:
+    for entity_id in runtime.coordinator.external_sensors:
         source = registry.async_get(entity_id)
         stable_source_id = source.id if source else sha1(entity_id.encode()).hexdigest()[:16]
-        entities.append(
-            RoomForecastSensor(
+        state = hass.states.get(entity_id)
+        source_name = state.name if state else entity_id
+        entities.extend(
+            (
+                ModelQualitySensor(
+                    runtime.coordinator, entry, entity_id, stable_source_id, source_name
+                ),
+                SelectedModelSensor(
+                    runtime.coordinator, entry, entity_id, stable_source_id, source_name
+                ),
+                ErrorMetricSensor(
+                    runtime.coordinator,
+                    entry,
+                    entity_id,
+                    stable_source_id,
+                    source_name,
+                    "bias",
+                    1,
+                ),
+            )
+        )
+        entities.extend(
+            ErrorMetricSensor(
                 runtime.coordinator,
                 entry,
                 entity_id,
                 stable_source_id,
-                hass.states.get(entity_id).name if hass.states.get(entity_id) else entity_id,
+                source_name,
+                "mae",
+                horizon,
             )
+            for horizon in (1, 6, 12, 24)
         )
     async_add_entities(entities)
 
@@ -58,11 +74,14 @@ class BaseDiagnosticSensor(CoordinatorEntity[LocalThermalForecastCoordinator], S
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
-        self, coordinator: LocalThermalForecastCoordinator, entry: ConfigEntry, suffix: str
+        self,
+        coordinator: LocalThermalForecastCoordinator,
+        entry: ConfigEntry,
+        suffix: str,
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_{suffix}"
-        self._attr_device_info = {"identifiers": {("local_thermal_forecast", entry.entry_id)}}
+        self._attr_device_info = {"identifiers": {(DOMAIN, entry.entry_id)}}
 
     @property
     def available(self) -> bool:
@@ -90,8 +109,32 @@ class ForecastAgeSensor(BaseDiagnosticSensor):
         )
 
 
-class ErrorMetricSensor(BaseDiagnosticSensor):
-    """Hybrid model bias or MAE at one horizon."""
+class SourceDiagnosticSensor(BaseDiagnosticSensor):
+    """Diagnostic associated with one external source sensor."""
+
+    def __init__(
+        self,
+        coordinator: LocalThermalForecastCoordinator,
+        entry: ConfigEntry,
+        source_entity_id: str,
+        stable_source_id: str,
+        suffix: str,
+        source_name: str,
+    ) -> None:
+        super().__init__(coordinator, entry, f"{stable_source_id}_{suffix}")
+        self.source_entity_id = source_entity_id
+        self.source_name = source_name
+
+    @property
+    def available(self) -> bool:
+        return bool(
+            self.coordinator.data
+            and self.source_entity_id in self.coordinator.data.external_forecasts
+        )
+
+
+class ErrorMetricSensor(SourceDiagnosticSensor):
+    """Hybrid model bias or MAE for one source and horizon."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -102,36 +145,69 @@ class ErrorMetricSensor(BaseDiagnosticSensor):
         self,
         coordinator: LocalThermalForecastCoordinator,
         entry: ConfigEntry,
+        source_entity_id: str,
+        stable_source_id: str,
+        source_name: str,
         metric: str,
         horizon: int,
     ) -> None:
-        super().__init__(coordinator, entry, f"{metric}_{horizon}h")
+        super().__init__(
+            coordinator,
+            entry,
+            source_entity_id,
+            stable_source_id,
+            f"{metric}_{horizon}h",
+            source_name,
+        )
         self.metric = metric
         self.horizon = horizon
         self._attr_translation_key = f"forecast_{metric}"
-        self._attr_translation_placeholders = {"horizon": str(horizon)}
+        self._attr_translation_placeholders = {
+            "source": source_name,
+            "horizon": str(horizon),
+        }
 
     @property
     def native_value(self) -> float | None:
-        value = self.coordinator.hybrid.metrics(self.horizon).get(self.metric)
+        value = self.coordinator.hybrid.metrics(self.source_entity_id, self.horizon).get(
+            self.metric
+        )
         return None if value is None else round(value, 2)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return self.coordinator.hybrid.metrics(self.horizon)
+        return {
+            "source_entity_id": self.source_entity_id,
+            **self.coordinator.hybrid.metrics(self.source_entity_id, self.horizon),
+        }
 
 
-class ModelQualitySensor(BaseDiagnosticSensor):
-    """Human-readable maturity of the +1h hybrid model."""
+class ModelQualitySensor(SourceDiagnosticSensor):
+    """Human-readable maturity of one source's +1h model."""
 
     _attr_translation_key = "model_quality"
 
-    def __init__(self, coordinator: LocalThermalForecastCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "model_quality")
+    def __init__(
+        self,
+        coordinator: LocalThermalForecastCoordinator,
+        entry: ConfigEntry,
+        source_entity_id: str,
+        stable_source_id: str,
+        source_name: str,
+    ) -> None:
+        super().__init__(
+            coordinator,
+            entry,
+            source_entity_id,
+            stable_source_id,
+            "model_quality",
+            source_name,
+        )
+        self._attr_translation_placeholders = {"source": source_name}
 
     @property
     def native_value(self) -> str:
-        metrics = self.coordinator.hybrid.metrics(1)
+        metrics = self.coordinator.hybrid.metrics(self.source_entity_id, 1)
         count = metrics["count"]
         mae = metrics["mae"]
         if count < 8:
@@ -146,43 +222,16 @@ class ModelQualitySensor(BaseDiagnosticSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return self.coordinator.hybrid.metrics(1)
-
-
-class SelectedModelSensor(BaseDiagnosticSensor):
-    """Selected weather model for the next hour."""
-
-    _attr_translation_key = "selected_model"
-
-    def __init__(self, coordinator: LocalThermalForecastCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator, entry, "selected_model")
-
-    @property
-    def native_value(self) -> str | None:
-        if not self.coordinator.data:
-            return None
-        model = self.coordinator.data.selected_models.get(1)
-        return MODEL_NAMES.get(model, model)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
         return {
-            f"plus_{horizon}h": MODEL_NAMES.get(model, model)
-            for horizon, model in self.coordinator.data.selected_models.items()
-            if horizon in {1, 6, 12, 24}
+            "source_entity_id": self.source_entity_id,
+            **self.coordinator.hybrid.metrics(self.source_entity_id, 1),
         }
 
 
-class RoomForecastSensor(CoordinatorEntity[LocalThermalForecastCoordinator], SensorEntity):
-    """Compact summary of one independent room forecast."""
+class SelectedModelSensor(SourceDiagnosticSensor):
+    """Selected weather model for one external source's next hour."""
 
-    _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 1
+    _attr_translation_key = "selected_model"
 
     def __init__(
         self,
@@ -192,33 +241,33 @@ class RoomForecastSensor(CoordinatorEntity[LocalThermalForecastCoordinator], Sen
         stable_source_id: str,
         source_name: str,
     ) -> None:
-        super().__init__(coordinator)
-        self.source_entity_id = source_entity_id
-        self._attr_unique_id = f"{entry.entry_id}_room_{stable_source_id}"
-        self._attr_name = f"{source_name} previsão +1h"
-        self._attr_device_info = {"identifiers": {("local_thermal_forecast", entry.entry_id)}}
-
-    @property
-    def available(self) -> bool:
-        return bool(
-            self.coordinator.data and self.source_entity_id in self.coordinator.data.room_forecasts
+        super().__init__(
+            coordinator,
+            entry,
+            source_entity_id,
+            stable_source_id,
+            "selected_model",
+            source_name,
         )
+        self._attr_translation_placeholders = {"source": source_name}
 
     @property
-    def native_value(self) -> float | None:
-        if not self.available:
+    def native_value(self) -> str | None:
+        if not self.coordinator.data:
             return None
-        return self.coordinator.data.room_forecasts[self.source_entity_id][0].temperature
+        model = self.coordinator.data.selected_models.get(self.source_entity_id, {}).get(1)
+        return MODEL_NAMES.get(model, model)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        if not self.available:
+        if not self.coordinator.data:
             return {"source_entity_id": self.source_entity_id}
-        points = self.coordinator.data.room_forecasts[self.source_entity_id]
+        models = self.coordinator.data.selected_models.get(self.source_entity_id, {})
         return {
             "source_entity_id": self.source_entity_id,
-            "forecast_3h": points[2].temperature,
-            "forecast_6h": points[5].temperature,
-            "forecast_12h": points[11].temperature,
-            "issued_at": self.coordinator.data.issued_at.isoformat(),
+            **{
+                f"plus_{horizon}h": MODEL_NAMES.get(model, model)
+                for horizon, model in models.items()
+                if horizon in {1, 6, 12, 24}
+            },
         }

@@ -102,24 +102,30 @@ class CoordinatorData:
     """Data shared by Home Assistant entities."""
 
     issued_at: datetime
-    outdoor_temperature: float
-    outdoor_forecast: tuple[HybridForecastPoint, ...]
+    external_temperatures: dict[str, float]
+    external_forecasts: dict[str, tuple[HybridForecastPoint, ...]]
     room_temperatures: dict[str, float]
     room_forecasts: dict[str, tuple[RoomForecastPoint, ...]]
-    selected_models: dict[int, str]
+    selected_models: dict[str, dict[int, str]]
 
     def as_dict(self) -> dict[str, Any]:
         """Return data suitable for Store."""
         return {
             "issued_at": self.issued_at.isoformat(),
-            "outdoor_temperature": self.outdoor_temperature,
-            "outdoor_forecast": [point.as_dict() for point in self.outdoor_forecast],
+            "external_temperatures": self.external_temperatures,
+            "external_forecasts": {
+                entity_id: [point.as_dict() for point in points]
+                for entity_id, points in self.external_forecasts.items()
+            },
             "room_temperatures": self.room_temperatures,
             "room_forecasts": {
                 entity_id: [point.as_dict() for point in points]
                 for entity_id, points in self.room_forecasts.items()
             },
-            "selected_models": {str(key): value for key, value in self.selected_models.items()},
+            "selected_models": {
+                entity_id: {str(horizon): model for horizon, model in horizons.items()}
+                for entity_id, horizons in self.selected_models.items()
+            },
         }
 
     @classmethod
@@ -127,14 +133,18 @@ class CoordinatorData:
         """Restore coordinator data from Store."""
         return cls(
             issued_at=datetime.fromisoformat(data["issued_at"]),
-            outdoor_temperature=data["outdoor_temperature"],
-            outdoor_forecast=tuple(
-                HybridForecastPoint.from_dict(point) for point in data["outdoor_forecast"]
-            ),
+            external_temperatures=data.get("external_temperatures", {}),
+            external_forecasts={
+                entity_id: tuple(HybridForecastPoint.from_dict(point) for point in points)
+                for entity_id, points in data.get("external_forecasts", {}).items()
+            },
             room_temperatures=data.get("room_temperatures", {}),
             room_forecasts={
                 entity_id: tuple(RoomForecastPoint.from_dict(point) for point in points)
                 for entity_id, points in data.get("room_forecasts", {}).items()
             },
-            selected_models={int(key): value for key, value in data["selected_models"].items()},
+            selected_models={
+                entity_id: {int(horizon): model for horizon, model in horizons.items()}
+                for entity_id, horizons in data.get("selected_models", {}).items()
+            },
         )
